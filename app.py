@@ -17,6 +17,19 @@ st.set_page_config(
 # =========================================================
 # CONFIGURATION
 # =========================================================
+# CEO reporting universe: only these BHs are included everywhere.
+# TBA variants are consolidated into TBA.
+ALLOWED_BHS = [
+    "Sadhna Shukla", "Prathap Sagar", "Mehr Hashim", "Anuradha",
+    "Ajay", "Deepak Desai", "Jawad Ulla Khan", "TBA", "ULITES"
+]
+BH_ORDER = {name: i for i, name in enumerate(ALLOWED_BHS)}
+
+# Only these four domains are included in the CEO view.
+# MS, International and unmapped/other domains are excluded everywhere.
+ALLOWED_DOMAINS = ["Captive", "Services", "ITES", "ULITES"]
+DOMAIN_ORDER = {name: i for i, name in enumerate(ALLOWED_DOMAINS)}
+
 REPO_FILE = Path(__file__).with_name("CEO_MongoDB.xlsx")
 
 SHEET_MAP = {
@@ -103,6 +116,8 @@ def load_workbook(source_bytes=None, source_path=None):
         for c in ["BH", "KAM", "Domain", cfg["client"]]:
             if c in df.columns:
                 df[c] = df[c].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
+        if "BH" in df.columns:
+            df["BH"] = df["BH"].replace({"TBA - I": "TBA", "TBA-1": "TBA", "TBA - 1": "TBA", "TBA–1": "TBA"})
         for c in ["no_of_opening", "po", "margin", "p_o_value"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
@@ -170,20 +185,51 @@ def metric_card(label, value, sub="", kind="blue"):
 
 
 def filter_df(df, sheet, filters):
-    cfg = SHEET_MAP[sheet]
-    x = df.copy()
-    for field, values in [("BH", filters["bh"]), ("KAM", filters["kam"]), ("Domain", filters["domain"]), (cfg["client"], filters["client"])]:
-        if values:
-            x = x[x[field].isin(values)]
+    """Apply the fixed CEO BH/domain universe, then user filters."""
+    cfg=SHEET_MAP[sheet]
+    x=df.copy()
+    if "BH" in x.columns:
+        x=x[x["BH"].isin(ALLOWED_BHS)]
+    if "Domain" in x.columns:
+        x=x[x["Domain"].isin(ALLOWED_DOMAINS)]
+    for field,values in [("BH",filters["bh"]),("KAM",filters["kam"]),("Domain",filters["domain"]),(cfg["client"],filters["client"])]:
+        if values and field in x.columns:
+            x=x[x[field].isin(values)]
     return x
 
 
-def universe_values(data, column):
-    vals = set()
+def universe_values(data,column):
+    vals=set()
     for sheet in SHEET_MAP:
         if column in data[sheet].columns:
             vals.update(data[sheet][column].dropna().astype(str).unique())
+    if column=="BH":
+        return [x for x in ALLOWED_BHS if x in vals or x=="ULITES"]
+    if column=="Domain":
+        return [x for x in ALLOWED_DOMAINS if x in vals]
     return sorted(vals)
+
+
+def ordered_sort(df,metric_col=None,group_cols=None):
+    """Sort Domain -> BH -> KAM, with the requested metric descending within each group."""
+    if df.empty:
+        return df
+    out=df.copy()
+    if "Domain" in out.columns:
+        out["__domain_order"]=out["Domain"].map(DOMAIN_ORDER).fillna(999)
+    if "BH" in out.columns:
+        out["__bh_order"]=out["BH"].map(BH_ORDER).fillna(999)
+    sort_cols=[c for c in ["__domain_order","__bh_order"] if c in out.columns]
+    if group_cols:
+        sort_cols += [c for c in group_cols if c in out.columns and c not in sort_cols]
+    if metric_col and metric_col in out.columns:
+        sort_cols.append(metric_col)
+        ascending=[True]*(len(sort_cols)-1)+[False]
+    else:
+        ascending=[True]*len(sort_cols)
+    if sort_cols:
+        out=out.sort_values(sort_cols,ascending=ascending,kind="stable")
+    return out.drop(columns=[c for c in ["__domain_order","__bh_order"] if c in out.columns])
 
 # =========================================================
 # CORE AGGREGATIONS
@@ -231,7 +277,7 @@ def active_snapshot(data, as_of, filters):
 
 
 def bh_scorecard(data, period, as_of, filters):
-    bhs = filters["bh"] or universe_values(data, "BH")
+    bhs = filters["bh"] or ALLOWED_BHS
     rows = []
     for bh in bhs:
         local = dict(filters)
@@ -305,7 +351,7 @@ def client_metrics(data, period, as_of, filters, event="Onboarding"):
 
 
 def bh_metric_event(data, period, as_of, filters, sheet, date_col, value_col=None, pipeline_sheet=None, pipeline_date=None):
-    bhs = filters["bh"] or universe_values(data, "BH")
+    bhs = filters["bh"] or ALLOWED_BHS
     rows = []
     for bh in bhs:
         local = dict(filters); local["bh"] = [bh]
@@ -477,10 +523,23 @@ def monthly_metric(sheet,date_col,value_col=None):
     return pd.DataFrame(rows)
 
 def breakdown_metric(sheet,date_col,value_col=None):
-    x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of); dim=selected_dimension(sheet)
+    x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of)
+    dim=selected_dimension(sheet)
     if x.empty: return pd.DataFrame(columns=[dim,"Value"])
-    out=x.groupby(dim)[value_col].sum().reset_index(name="Value") if value_col else x.groupby(dim).size().reset_index(name="Value")
-    return out.sort_values("Value",ascending=False).head(20)
+    if analysis_view=="Client":
+        dim=SHEET_MAP[sheet]["client"]
+        group_cols=["Domain","BH","KAM",dim]
+    elif analysis_view=="KAM":
+        x=x.assign(**{"KAM View":x["BH"]+" | "+x["KAM"]})
+        dim="KAM View"
+        group_cols=["Domain","BH","KAM",dim]
+    else:
+        group_cols=[dim]
+    if value_col:
+        out=x.groupby(group_cols,dropna=False)[value_col].sum().reset_index(name="Value")
+    else:
+        out=x.groupby(group_cols,dropna=False).size().reset_index(name="Value")
+    return ordered_sort(out,"Value",group_cols=[c for c in ["Domain","BH","KAM"] if c in out.columns])
 
 def dod_metric(sheet,date_col,value_col=None):
     x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of)
@@ -517,10 +576,19 @@ r=st.columns(7)
 items=[("Demand",fmt_int(m["demand"]),"MTD","blue"),("Submission",fmt_int(m["submission"]),"MTD","blue"),("Interview",fmt_int(m["interview"]),"MTD","blue"),("Selection",fmt_int(m["selection"]),"MTD","blue"),("Onboarding",fmt_int(m["ob_hc"]),f"PO {fmt_lakh(m['ob_po'])}","green"),("Exit",fmt_int(m["exit_hc"]),f"PO {fmt_lakh(m['exit_po'])}","red"),("Net",fmt_int(net_mtd),"OB − Exit","dark")]
 for col,(lab,val,sub,kind) in zip(r,items):
     with col: metric_card(lab,val,sub,kind)
-r2=st.columns(4)
-items2=[("OB Projection",ob_proj,f"MTD + {m['ob_pipe_hc']} pipeline","green"),("Exit Projection",ex_proj,f"MTD + {m['exit_pipe_hc']} pipeline","red"),("Net Projection",net_proj,"OB Projection − Exit Projection","dark"),("OB Margin %",f"{pct(m['ob_margin'],m['ob_po']):.1f}%",f"Margin {fmt_lakh(m['ob_margin'])} / PO {fmt_lakh(m['ob_po'])}","gold")]
-for col,(lab,val,sub,kind) in zip(r2,items2):
-    with col: metric_card(lab,fmt_int(val) if isinstance(val,(int,np.integer)) else val,sub,kind)
+ob_proj_po=m["ob_po"]+m["ob_pipe_po"]; ob_proj_margin=m["ob_margin"]+m["ob_pipe_margin"]
+ex_proj_po=m["exit_po"]+m["exit_pipe_po"]; ex_proj_margin=m["exit_margin"]+m["exit_pipe_margin"]
+net_proj_po=ob_proj_po-ex_proj_po; net_proj_margin=ob_proj_margin-ex_proj_margin
+r2=st.columns(3)
+projection_cards=[
+    ("OB PROJECTION",ob_proj,ob_proj_po,ob_proj_margin,"green"),
+    ("EXIT PROJECTION",ex_proj,ex_proj_po,ex_proj_margin,"red"),
+    ("NET PROJECTION",net_proj,net_proj_po,net_proj_margin,"dark"),
+]
+for col,(lab,hc,po_v,mar_v,kind) in zip(r2,projection_cards):
+    with col:
+        html=f'<div class="metric {kind}"><div class="label">{lab}</div><div class="value">{fmt_int(hc)} HC</div><div class="sub">PO {fmt_lakh(po_v)} &nbsp; | &nbsp; Margin {fmt_lakh(mar_v)}</div></div>'
+        st.markdown(html,unsafe_allow_html=True)
 
 st.markdown('<div class="section-title">CEO Trend Board — separate metric charts</div>',unsafe_allow_html=True)
 chart_specs=[("Demand","Demand","Created_at",None),("Submission","Submission","date",None),("Interview","Interview","Interview_date",None),("Selection","Selection","selection_date",None),("Onboarding","Onboarding","display_date",None),("Exit","Exit","last_work_day",None)]
@@ -534,7 +602,8 @@ tabs=st.tabs(["Demand","Submission","Interview","Selection","Onboarding","Exit",
 with tabs[0]:
     render_operational_tab("Demand","Created_at","Demand",None,"blue",lambda:100*m["submission"]/m["demand"] if m["demand"] else 0)
     d=mtd(filter_df(data["Demand"],"Demand",filters),"Created_at",selected_period,as_of)
-    detail=d.groupby(["Company_name","BH","KAM","Domain"],dropna=False)["no_of_opening"].sum().reset_index().sort_values("no_of_opening",ascending=False)
+    detail=d.groupby(["Company_name","BH","KAM","Domain"],dropna=False)["no_of_opening"].sum().reset_index()
+    detail=ordered_sort(detail,"no_of_opening")
     st.dataframe(detail,use_container_width=True,hide_index=True,height=360)
 with tabs[1]:
     render_operational_tab("Submission","date","Submission",None,"blue",lambda:100*m["submission"]/m["demand"] if m["demand"] else 0)
@@ -557,7 +626,7 @@ with tabs[4]:
     c1,c2=st.columns(2)
     with c1: st.plotly_chart(clean_chart(px.bar(po_mm,x="Month",y="Value",text_auto=".1f",height=330),"Onboarding PO — Month-on-Month (₹ Lakhs)"),use_container_width=True)
     with c2: st.plotly_chart(clean_chart(px.bar(mar_mm,x="Month",y="Value",text_auto=".1f",height=330),"Onboarding Margin — Month-on-Month (₹ Lakhs)"),use_container_width=True)
-    detail=ob.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index(); detail["PO (L)"]=detail["PO"]/100000; detail["Margin (L)"]=detail["Margin"]/100000; detail["Margin %"]=np.where(detail["PO"]!=0,detail["Margin"]/detail["PO"]*100,0)
+    detail=ob.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index(); detail["PO (L)"]=detail["PO"]/100000; detail["Margin (L)"]=detail["Margin"]/100000; detail["Margin %"]=np.where(detail["PO"]!=0,detail["Margin"]/detail["PO"]*100,0); detail=ordered_sort(detail,"HC")
     st.dataframe(detail[["company_name","BH","KAM","Domain","HC","PO (L)","Margin (L)","Margin %"]].sort_values("HC",ascending=False).style.format({"PO (L)":"{:,.1f}","Margin (L)":"{:,.1f}","Margin %":"{:,.1f}%"}),use_container_width=True,height=380,hide_index=True)
 with tabs[5]:
     ex=mtd(filter_df(data["Exit"],"Exit",filters),"last_work_day",selected_period,as_of); exp=pipeline(filter_df(data["Exit Pipeline"],"Exit Pipeline",filters),"tentative_exit_date",selected_period,as_of); po=ex["p_o_value"].sum(); mar=ex["margin"].sum()
@@ -574,7 +643,7 @@ with tabs[5]:
     c1,c2=st.columns(2)
     with c1: st.plotly_chart(clean_chart(px.bar(po_mm,x="Month",y="Value",text_auto=".1f",height=330),"Exit PO — Month-on-Month (₹ Lakhs)"),use_container_width=True)
     with c2: st.plotly_chart(clean_chart(px.bar(mar_mm,x="Month",y="Value",text_auto=".1f",height=330),"Exit Margin — Month-on-Month (₹ Lakhs)"),use_container_width=True)
-    detail=ex.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index(); detail["PO (L)"]=detail["PO"]/100000; detail["Margin (L)"]=detail["Margin"]/100000; detail["Margin %"]=np.where(detail["PO"]!=0,detail["Margin"]/detail["PO"]*100,0)
+    detail=ex.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index(); detail["PO (L)"]=detail["PO"]/100000; detail["Margin (L)"]=detail["Margin"]/100000; detail["Margin %"]=np.where(detail["PO"]!=0,detail["Margin"]/detail["PO"]*100,0); detail=ordered_sort(detail,"HC")
     st.dataframe(detail[["company_name","BH","KAM","Domain","HC","PO (L)","Margin (L)","Margin %"]].sort_values("HC",ascending=False).style.format({"PO (L)":"{:,.1f}","Margin (L)":"{:,.1f}","Margin %":"{:,.1f}%"}),use_container_width=True,height=380,hide_index=True)
 with tabs[6]:
     c=st.columns(6); vals=[("OB MTD",m["ob_hc"],"Actual","green"),("OB Pipeline",m["ob_pipe_hc"],"Remaining","green"),("OB Projection",ob_proj,"MTD + Pipeline","green"),("Exit MTD",m["exit_hc"],"Actual","red"),("Exit Pipeline",m["exit_pipe_hc"],"Remaining","red"),("Net Projection",net_proj,"OB Projection − Exit Projection","dark")]
@@ -617,7 +686,7 @@ with tabs[6]:
         "Net Projection", "Net Projection PO (L)", "Net Projection Margin (L)"
     ]
     st.dataframe(
-        score[bh_cols].sort_values(["Net Projection", "Net Projection PO (L)"], ascending=False).style.format({c:"{:,.1f}" for c in bh_cols if c != "BH" and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
+        ordered_sort(score[bh_cols],"Net Projection",group_cols=[]).style.format({c:"{:,.1f}" for c in bh_cols if c != "BH" and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
         use_container_width=True, height=440, hide_index=True
     )
 
@@ -648,7 +717,7 @@ with tabs[6]:
             "Net Projection", "Net Projection PO (L)", "Net Projection Margin (L)"
         ]
         st.dataframe(
-            client_tbl[client_cols].sort_values(["Net Projection", "Net Projection PO (L)"], ascending=False).style.format({c:"{:,.1f}" for c in client_cols if c not in ["Client","BH","KAM","Domain"] and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
+            ordered_sort(client_tbl[client_cols],"Net Projection").style.format({c:"{:,.1f}" for c in client_cols if c not in ["Client","BH","KAM","Domain"] and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
             use_container_width=True, height=480, hide_index=True
         )
 
