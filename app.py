@@ -1,79 +1,97 @@
-
-import os
 from io import BytesIO
 from pathlib import Path
-import pandas as pd
+
 import numpy as np
-import streamlit as st
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
 st.set_page_config(
-    page_title="CEO | Business Performance Dashboard",
+    page_title="CEO | Business Performance Cockpit",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# -----------------------------
-# Configuration
-# -----------------------------
+# =========================================================
+# CONFIGURATION
+# =========================================================
 REPO_FILE = Path(__file__).with_name("CEO_MongoDB.xlsx")
+
 SHEET_MAP = {
-    "Demand": {"date": "Created_at", "bh": "BH", "client": "Company_name"},
-    "Submission": {"date": "date", "bh": "BH", "client": "client"},
-    "Interview": {"date": "Interview_date", "bh": "BH", "client": "company_name"},
-    "Selection": {"date": "selection_date", "bh": "BH", "client": "company_name"},
-    "Onboarding": {"date": "display_date", "bh": "BH", "client": "company_name"},
-    "Onboarding Pipeline": {"date": "display_date", "bh": "BH", "client": "company_name"},
-    "Exit": {"date": "last_work_day", "bh": "BH", "client": "company_name"},
-    "Exit Pipeline": {"date": "tentative_exit_date", "bh": "BH", "client": "company_name"},
-    "Active Headcount": {"date": "display_date", "bh": "BH", "client": "company_name"},
+    "Demand": {"date": "Created_at", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "Company_name"},
+    "Submission": {"date": "date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "client"},
+    "Interview": {"date": "Interview_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Selection": {"date": "selection_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Onboarding": {"date": "display_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Onboarding Pipeline": {"date": "display_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Exit": {"date": "last_work_day", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Exit Pipeline": {"date": "tentative_exit_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
+    "Active Headcount": {"date": "display_date", "bh": "BH", "kam": "KAM", "domain": "Domain", "client": "company_name"},
 }
 
 REQUIRED = {
-    "Demand": ["no_of_opening", "Created_at", "BH", "KAM", "Company_name"],
-    "Submission": ["date", "BH", "KAM", "client"],
-    "Interview": ["Interview_date", "BH", "KAM", "company_name"],
-    "Selection": ["selection_date", "BH", "KAM", "company_name", "po", "margin"],
-    "Onboarding": ["display_date", "BH", "KAM", "company_name", "p_o_value", "margin"],
-    "Onboarding Pipeline": ["display_date", "BH", "KAM", "company_name", "p_o_value", "margin"],
-    "Exit": ["last_work_day", "BH", "KAM", "company_name", "p_o_value", "margin"],
-    "Exit Pipeline": ["tentative_exit_date", "BH", "KAM", "company_name", "p_o_value", "margin"],
-    "Active Headcount": ["display_date", "BH", "KAM", "company_name", "p_o_value", "margin"],
+    "Demand": ["no_of_opening", "Created_at", "BH", "KAM", "Domain", "Company_name"],
+    "Submission": ["date", "BH", "KAM", "Domain", "client"],
+    "Interview": ["Interview_date", "BH", "KAM", "Domain", "company_name"],
+    "Selection": ["selection_date", "BH", "KAM", "Domain", "company_name", "po", "margin"],
+    "Onboarding": ["display_date", "BH", "KAM", "Domain", "company_name", "p_o_value", "margin"],
+    "Onboarding Pipeline": ["display_date", "BH", "KAM", "Domain", "company_name", "p_o_value", "margin"],
+    "Exit": ["last_work_day", "BH", "KAM", "Domain", "company_name", "p_o_value", "margin"],
+    "Exit Pipeline": ["tentative_exit_date", "BH", "KAM", "Domain", "company_name", "p_o_value", "margin"],
+    "Active Headcount": ["display_date", "BH", "KAM", "Domain", "company_name", "p_o_value", "margin"],
 }
 
-# -----------------------------
-# Styling
-# -----------------------------
-st.markdown("""
-<style>
-.block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
-h1, h2, h3 {letter-spacing: -0.02em;}
-.metric-card {
-    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
-    border: 1px solid #374151;
-    border-radius: 14px;
-    padding: 14px 16px;
-    min-height: 112px;
-}
-.metric-label {font-size: 0.80rem; color: #9ca3af; margin-bottom: 5px;}
-.metric-value {font-size: 1.65rem; font-weight: 750; color: white;}
-.metric-sub {font-size: 0.74rem; color: #d1d5db; margin-top: 3px;}
-.section-note {color:#6b7280; font-size:0.85rem;}
-.small-muted {color:#6b7280; font-size:0.75rem;}
-</style>
-""", unsafe_allow_html=True)
+# =========================================================
+# STYLING
+# =========================================================
+st.markdown(
+    """
+    <style>
+    .stApp { background: #071b3b; }
+    .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1800px; }
+    [data-testid="stHeader"] { background: rgba(0,0,0,0); }
+    [data-testid="stSidebar"] { background: #061733; }
+    [data-testid="stSidebar"] * { color: #eef5ff; }
+    .hero {
+        background: linear-gradient(100deg, #08295b 0%, #0b477d 48%, #0b294f 100%);
+        border: 1px solid #2d6093; border-radius: 16px; padding: 18px 22px; margin-bottom: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.22);
+    }
+    .hero h1 { color: white; margin: 0; font-size: 2rem; letter-spacing: -.03em; }
+    .hero p { color: #c7d9ed; margin: 5px 0 0; font-size: .9rem; }
+    .section-title { color: white; font-size: 1.15rem; font-weight: 700; margin: 12px 0 7px; }
+    .metric {
+        background: #f6f8fb; border: 2px solid #dbe5ef; border-radius: 12px;
+        padding: 12px 14px; min-height: 104px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    }
+    .metric .label { color: #405064; font-size: .78rem; font-weight: 700; text-transform: uppercase; }
+    .metric .value { color: #092f59; font-size: 1.8rem; font-weight: 800; line-height: 1.1; margin-top: 6px; }
+    .metric .sub { color: #66778a; font-size: .72rem; margin-top: 5px; }
+    .metric.green { border-top: 5px solid #16823b; }
+    .metric.red { border-top: 5px solid #cf3940; }
+    .metric.blue { border-top: 5px solid #0b5a91; }
+    .metric.gold { border-top: 5px solid #d3911e; }
+    .metric.dark { background: #0c2e56; border-color: #29557e; }
+    .metric.dark .label, .metric.dark .sub { color: #c8d9eb; }
+    .metric.dark .value { color: white; }
+    .chart-card { background: #f7f9fc; border-radius: 14px; padding: 4px 7px 2px; }
+    .small-note { color: #c2d3e6; font-size: .78rem; }
+    div[data-testid="stTabs"] button { color: #d7e6f7; font-weight: 700; }
+    div[data-testid="stTabs"] button[aria-selected="true"] { color: #ffffff; }
+    .stDataFrame { border-radius: 10px; overflow: hidden; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# -----------------------------
-# Data loading
-# -----------------------------
+# =========================================================
+# DATA LOADING
+# =========================================================
 @st.cache_data(show_spinner=False)
 def load_workbook(source_bytes=None, source_path=None):
-    if source_bytes is not None:
-        raw = BytesIO(source_bytes)
-    else:
-        raw = source_path
+    raw = BytesIO(source_bytes) if source_bytes is not None else source_path
     data = {}
     for sheet, cfg in SHEET_MAP.items():
         df = pd.read_excel(raw, sheet_name=sheet)
@@ -81,526 +99,589 @@ def load_workbook(source_bytes=None, source_path=None):
         if missing:
             raise ValueError(f"{sheet}: missing columns: {', '.join(missing)}")
         df = df.copy()
-        df[cfg["date"]] = pd.to_datetime(df[cfg["date"]], errors="coerce")
-        if "BH" in df.columns:
-            df["BH"] = df["BH"].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
-        if "KAM" in df.columns:
-            df["KAM"] = df["KAM"].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
-        client_col = cfg["client"]
-        if client_col in df.columns:
-            df[client_col] = df[client_col].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
+        df[cfg["date"]] = pd.to_datetime(df[cfg["date"]], errors="coerce").dt.normalize()
+        for c in ["BH", "KAM", "Domain", cfg["client"]]:
+            if c in df.columns:
+                df[c] = df[c].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
         for c in ["no_of_opening", "po", "margin", "p_o_value"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
         data[sheet] = df
     return data
 
+
 def get_repo_bytes():
-    if not REPO_FILE.exists():
-        return None
-    return REPO_FILE.read_bytes()
+    return REPO_FILE.read_bytes() if REPO_FILE.exists() else None
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def month_label(ts):
-    return pd.Timestamp(ts).strftime("%b'%y")
 
-def month_start(month_period):
-    return pd.Timestamp(month_period.start_time.date())
+def month_label(period):
+    return pd.Timestamp(period.start_time).strftime("%b'%y")
 
-def month_end(month_period):
-    return pd.Timestamp(month_period.end_time.date())
 
-def filter_dates(df, date_col, start, end):
-    d = df[date_col]
-    return df[(d >= start) & (d <= end)].copy()
+def period_from_label(label):
+    return pd.Period(pd.to_datetime("01-" + label.replace("'", "-"), format="%d-%b-%y"), freq="M")
 
-def in_month_to_date(df, date_col, period, as_of):
-    start = month_start(period)
-    end = min(month_end(period), pd.Timestamp(as_of).normalize())
-    return filter_dates(df, date_col, start, end)
 
-def in_month_pipeline(df, date_col, period):
-    # Pipeline is a separate pipeline population for the selected month.
-    # It is not restricted to dates after the DOD because the source pipeline
-    # sheets contain pipeline records dated earlier in the month as well.
-    return filter_dates(df, date_col, month_start(period), month_end(period))
+def date_filter(df, date_col, start, end):
+    return df[(df[date_col] >= start) & (df[date_col] <= end)].copy()
 
-def fmt_num(v):
-    return f"{v:,.0f}"
 
-def fmt_lakh(v):
-    return f"{v:,.1f}"
+def mtd(df, date_col, period, as_of):
+    start = period.start_time.normalize()
+    end = min(period.end_time.normalize(), pd.Timestamp(as_of).normalize())
+    return date_filter(df, date_col, start, end)
 
-def metric_card(label, value, sub=""):
+
+def pipeline(df, date_col, period, as_of):
+    # Pipeline means records scheduled after the selected DOD and inside the selected month.
+    start = pd.Timestamp(as_of).normalize() + pd.Timedelta(days=1)
+    end = period.end_time.normalize()
+    return date_filter(df, date_col, start, end)
+
+
+def money_lakh(value):
+    return float(value or 0) / 100000
+
+
+def fmt_int(value):
+    return f"{int(round(value or 0)):,}"
+
+
+def fmt_lakh(value):
+    return f"{money_lakh(value):,.1f} L"
+
+
+def pct(margin, po):
+    return 0 if po == 0 else margin / po * 100
+
+
+def metric_card(label, value, sub="", kind="blue"):
     st.markdown(
-        f"""<div class="metric-card">
-        <div class="metric-label">{label}</div>
-        <div class="metric-value">{value}</div>
-        <div class="metric-sub">{sub}</div>
-        </div>""",
+        f'''<div class="metric {kind}">
+        <div class="label">{label}</div><div class="value">{value}</div><div class="sub">{sub}</div>
+        </div>''',
         unsafe_allow_html=True,
     )
 
-def agg_bh(data, period, as_of, bh_filter=None, kam_filter=None, client_filter=None):
-    # BH universe comes from all relevant tabs.
-    universe = set()
-    for s, cfg in SHEET_MAP.items():
-        df = data[s]
-        universe.update(df["BH"].dropna().astype(str).unique())
-    universe = sorted(universe)
 
+def filter_df(df, sheet, filters):
+    cfg = SHEET_MAP[sheet]
+    x = df.copy()
+    for field, values in [("BH", filters["bh"]), ("KAM", filters["kam"]), ("Domain", filters["domain"]), (cfg["client"], filters["client"])]:
+        if values:
+            x = x[x[field].isin(values)]
+    return x
+
+
+def universe_values(data, column):
+    vals = set()
+    for sheet in SHEET_MAP:
+        if column in data[sheet].columns:
+            vals.update(data[sheet][column].dropna().astype(str).unique())
+    return sorted(vals)
+
+# =========================================================
+# CORE AGGREGATIONS
+# =========================================================
+def overall_metrics(data, period, as_of, filters):
+    def f(sheet):
+        return filter_df(data[sheet], sheet, filters)
+
+    demand = mtd(f("Demand"), "Created_at", period, as_of)
+    sub = mtd(f("Submission"), "date", period, as_of)
+    intr = mtd(f("Interview"), "Interview_date", period, as_of)
+    sel = mtd(f("Selection"), "selection_date", period, as_of)
+    ob = mtd(f("Onboarding"), "display_date", period, as_of)
+    obp = pipeline(f("Onboarding Pipeline"), "display_date", period, as_of)
+    ex = mtd(f("Exit"), "last_work_day", period, as_of)
+    exp = pipeline(f("Exit Pipeline"), "tentative_exit_date", period, as_of)
+
+    return {
+        "demand": demand["no_of_opening"].sum(),
+        "submission": len(sub),
+        "interview": len(intr),
+        "selection": len(sel),
+        "ob_hc": len(ob),
+        "ob_po": ob["p_o_value"].sum(),
+        "ob_margin": ob["margin"].sum(),
+        "ob_pipe_hc": len(obp),
+        "ob_pipe_po": obp["p_o_value"].sum(),
+        "ob_pipe_margin": obp["margin"].sum(),
+        "exit_hc": len(ex),
+        "exit_po": ex["p_o_value"].sum(),
+        "exit_margin": ex["margin"].sum(),
+        "exit_pipe_hc": len(exp),
+        "exit_pipe_po": exp["p_o_value"].sum(),
+        "exit_pipe_margin": exp["margin"].sum(),
+    }
+
+
+def active_snapshot(data, as_of, filters):
+    ah = filter_df(data["Active Headcount"], "Active Headcount", filters)
+    ah = ah[ah["display_date"] <= pd.Timestamp(as_of).normalize()]
+    if ah.empty:
+        return ah
+    latest = ah["display_date"].max()
+    return ah[ah["display_date"] == latest].copy()
+
+
+def bh_scorecard(data, period, as_of, filters):
+    bhs = filters["bh"] or universe_values(data, "BH")
     rows = []
-    for bh in universe:
-        if bh_filter and bh not in bh_filter:
-            continue
-
-        def apply_extra(df, cfg):
-            x = df[df["BH"] == bh].copy()
-            if kam_filter and "KAM" in x.columns:
-                x = x[x["KAM"].isin(kam_filter)]
-            if client_filter:
-                x = x[x[cfg["client"]].isin(client_filter)]
-            return x
-
-        demand = apply_extra(data["Demand"], SHEET_MAP["Demand"])
-        sub = apply_extra(data["Submission"], SHEET_MAP["Submission"])
-        intr = apply_extra(data["Interview"], SHEET_MAP["Interview"])
-        sel = apply_extra(data["Selection"], SHEET_MAP["Selection"])
-        ob = apply_extra(data["Onboarding"], SHEET_MAP["Onboarding"])
-        obp = apply_extra(data["Onboarding Pipeline"], SHEET_MAP["Onboarding Pipeline"])
-        ex = apply_extra(data["Exit"], SHEET_MAP["Exit"])
-        exp = apply_extra(data["Exit Pipeline"], SHEET_MAP["Exit Pipeline"])
-        ah = apply_extra(data["Active Headcount"], SHEET_MAP["Active Headcount"])
-
-        d_mtd = in_month_to_date(demand, "Created_at", period, as_of)
-        s_mtd = in_month_to_date(sub, "date", period, as_of)
-        i_mtd = in_month_to_date(intr, "Interview_date", period, as_of)
-        se_mtd = in_month_to_date(sel, "selection_date", period, as_of)
-        o_mtd = in_month_to_date(ob, "display_date", period, as_of)
-        o_pipe = in_month_pipeline(obp, "display_date", period)
-        e_mtd = in_month_to_date(ex, "last_work_day", period, as_of)
-        e_pipe = in_month_pipeline(exp, "tentative_exit_date", period)
-
-        active = ah[ah["display_date"] <= pd.Timestamp(as_of).normalize()]
-        # Use the latest available Active Headcount snapshot up to as_of for the BH.
-        if not active.empty:
-            latest = active["display_date"].max()
-            active = active[active["display_date"] == latest]
-
-        ob_po = o_mtd["p_o_value"].sum()
-        ob_margin = o_mtd["margin"].sum()
-        obp_po = o_pipe["p_o_value"].sum()
-        obp_margin = o_pipe["margin"].sum()
-        ex_po = e_mtd["p_o_value"].sum()
-        ex_margin = e_mtd["margin"].sum()
-        exp_po = e_pipe["p_o_value"].sum()
-        exp_margin = e_pipe["margin"].sum()
-
+    for bh in bhs:
+        local = dict(filters)
+        local["bh"] = [bh]
+        m = overall_metrics(data, period, as_of, local)
+        ah = active_snapshot(data, as_of, local)
+        ob_proj = m["ob_hc"] + m["ob_pipe_hc"]
+        ex_proj = m["exit_hc"] + m["exit_pipe_hc"]
         rows.append({
             "BH": bh,
-            "Demand": d_mtd["no_of_opening"].sum(),
-            "Submissions": len(s_mtd),
-            "Interview": len(i_mtd),
-            "Selections": len(se_mtd),
-            "Onboarding": len(o_mtd),
-            "OB PO (L)": ob_po / 100000,
-            "OB Margin (L)": ob_margin / 100000,
-            "OB Pipeline": len(o_pipe),
-            "OB Pipeline PO (L)": obp_po / 100000,
-            "OB Pipeline Margin (L)": obp_margin / 100000,
-            "OB Projection": len(o_mtd) + len(o_pipe),
-            "OB Projection PO (L)": (ob_po + obp_po) / 100000,
-            "OB Projection Margin (L)": (ob_margin + obp_margin) / 100000,
-            "Exited": len(e_mtd),
-            "Exit PO (L)": ex_po / 100000,
-            "Exit Margin (L)": ex_margin / 100000,
-            "Exit Pipeline": len(e_pipe),
-            "Exit Pipeline PO (L)": exp_po / 100000,
-            "Exit Pipeline Margin (L)": exp_margin / 100000,
-            "Exit Projection": len(e_mtd) + len(e_pipe),
-            "Exit Projection PO (L)": (ex_po + exp_po) / 100000,
-            "Exit Projection Margin (L)": (ex_margin + exp_margin) / 100000,
-            "MTD Net": len(o_mtd) - len(e_mtd),
-            "Net Projection": len(o_mtd) + len(o_pipe) - len(e_mtd) - len(e_pipe),
-            "Active HC": len(active),
-            "Active PO (L)": active["p_o_value"].sum() / 100000,
-            "Active Margin (L)": active["margin"].sum() / 100000,
+            "Demand": m["demand"], "Submission": m["submission"], "Interview": m["interview"], "Selection": m["selection"],
+            "OB MTD": m["ob_hc"], "OB Pipeline": m["ob_pipe_hc"], "OB Projection": ob_proj,
+            "Exit MTD": m["exit_hc"], "Exit Pipeline": m["exit_pipe_hc"], "Exit Projection": ex_proj,
+            "MTD Net": m["ob_hc"] - m["exit_hc"], "Net Projection": ob_proj - ex_proj,
+            "OB PO (L)": money_lakh(m["ob_po"]), "OB Margin (L)": money_lakh(m["ob_margin"]),
+            "Exit PO (L)": money_lakh(m["exit_po"]), "Exit Margin (L)": money_lakh(m["exit_margin"]),
+            "Active HC": len(ah), "Active PO (L)": money_lakh(ah["p_o_value"].sum()), "Active Margin (L)": money_lakh(ah["margin"].sum()),
         })
-
     return pd.DataFrame(rows)
 
-def client_detail(data, period, as_of, selected_bhs=None, selected_kams=None):
-    # Client list from the active population and MTD/pipeline tabs.
-    source_cols = [
-        ("Active Headcount", "company_name"),
-        ("Onboarding", "company_name"),
-        ("Onboarding Pipeline", "company_name"),
-        ("Exit", "company_name"),
-        ("Exit Pipeline", "company_name"),
-        ("Demand", "Company_name"),
-        ("Submission", "client"),
-        ("Interview", "company_name"),
-        ("Selection", "company_name"),
-    ]
+
+def client_metrics(data, period, as_of, filters, event="Onboarding"):
+    # Build client universe from all relevant source tabs after global filters.
+    client_col_map = {s: SHEET_MAP[s]["client"] for s in SHEET_MAP}
     clients = set()
-    for s, c in source_cols:
-        df = data[s]
-        if selected_bhs:
-            df = df[df["BH"].isin(selected_bhs)]
-        if selected_kams:
-            df = df[df["KAM"].isin(selected_kams)]
-        clients.update(df[c].dropna().astype(str).unique())
+    for s, c in client_col_map.items():
+        x = filter_df(data[s], s, filters)
+        clients.update(x[c].dropna().astype(str).unique())
 
     rows = []
     for client in sorted(clients):
-        def x(s):
-            cfg = SHEET_MAP[s]
-            df = data[s]
-            if selected_bhs:
-                df = df[df["BH"].isin(selected_bhs)]
-            if selected_kams:
-                df = df[df["KAM"].isin(selected_kams)]
-            return df[df[cfg["client"]] == client].copy()
-
-        ah = x("Active Headcount")
-        ob = x("Onboarding")
-        obp = x("Onboarding Pipeline")
-        ex = x("Exit")
-        exp = x("Exit Pipeline")
-        dem = x("Demand")
-        sub = x("Submission")
-        intr = x("Interview")
-        sel = x("Selection")
-
-        ah = ah[ah["display_date"] <= pd.Timestamp(as_of).normalize()]
-        if not ah.empty:
-            ah = ah[ah["display_date"] == ah["display_date"].max()]
-
-        dem = in_month_to_date(dem, "Created_at", period, as_of)
-        sub = in_month_to_date(sub, "date", period, as_of)
-        intr = in_month_to_date(intr, "Interview_date", period, as_of)
-        sel = in_month_to_date(sel, "selection_date", period, as_of)
-        ob = in_month_to_date(ob, "display_date", period, as_of)
-        obp = in_month_pipeline(obp, "display_date", period)
-        ex = in_month_to_date(ex, "last_work_day", period, as_of)
-        exp = in_month_pipeline(exp, "tentative_exit_date", period)
-
+        local = dict(filters)
+        local["client"] = [client]
+        m = overall_metrics(data, period, as_of, local)
+        ah = active_snapshot(data, as_of, local)
         rows.append({
             "Client": client,
-            "BH": (ah["BH"].mode().iat[0] if not ah.empty else
-                   (ob["BH"].mode().iat[0] if not ob.empty else "")),
-            "KAM": (ah["KAM"].mode().iat[0] if not ah.empty else
-                    (ob["KAM"].mode().iat[0] if not ob.empty else "")),
-            "Active HC": len(ah),
-            "Active PO (L)": ah["p_o_value"].sum()/100000,
-            "Active Margin (L)": ah["margin"].sum()/100000,
-            "Demand": dem["no_of_opening"].sum(),
-            "Submissions": len(sub),
-            "Interview": len(intr),
-            "Selections": len(sel),
-            "Onboarding": len(ob),
-            "OB PO (L)": ob["p_o_value"].sum()/100000,
-            "OB Margin (L)": ob["margin"].sum()/100000,
-            "OB Pipeline": len(obp),
-            "OB Pipeline PO (L)": obp["p_o_value"].sum()/100000,
-            "OB Pipeline Margin (L)": obp["margin"].sum()/100000,
-            "OB Projection": len(ob)+len(obp),
-            "Exited": len(ex),
-            "Exit PO (L)": ex["p_o_value"].sum()/100000,
-            "Exit Margin (L)": ex["margin"].sum()/100000,
-            "Exit Pipeline": len(exp),
-            "Exit Pipeline PO (L)": exp["p_o_value"].sum()/100000,
-            "Exit Pipeline Margin (L)": exp["margin"].sum()/100000,
-            "Exit Projection": len(ex)+len(exp),
-            "MTD Net": len(ob)-len(ex),
-            "Net Projection": len(ob)+len(obp)-len(ex)-len(exp),
+            "BH": (ah["BH"].mode().iat[0] if not ah.empty else ""),
+            "KAM": (ah["KAM"].mode().iat[0] if not ah.empty else ""),
+            "Demand": m["demand"], "Submission": m["submission"], "Interview": m["interview"], "Selection": m["selection"],
+            "OB MTD": m["ob_hc"], "OB Pipeline": m["ob_pipe_hc"], "OB Projection": m["ob_hc"] + m["ob_pipe_hc"],
+            "OB PO (L)": money_lakh(m["ob_po"]), "OB Margin (L)": money_lakh(m["ob_margin"]),
+            "OB Margin %": pct(m["ob_margin"], m["ob_po"]),
+            "Exit MTD": m["exit_hc"], "Exit Pipeline": m["exit_pipe_hc"], "Exit Projection": m["exit_hc"] + m["exit_pipe_hc"],
+            "Exit PO (L)": money_lakh(m["exit_po"]), "Exit Margin (L)": money_lakh(m["exit_margin"]),
+            "Exit Margin %": pct(m["exit_margin"], m["exit_po"]),
+            "MTD Net": m["ob_hc"] - m["exit_hc"], "Net Projection": m["ob_hc"] + m["ob_pipe_hc"] - m["exit_hc"] - m["exit_pipe_hc"],
         })
-
     return pd.DataFrame(rows)
 
-# -----------------------------
-# Load source
-# -----------------------------
+
+def bh_metric_event(data, period, as_of, filters, sheet, date_col, value_col=None, pipeline_sheet=None, pipeline_date=None):
+    bhs = filters["bh"] or universe_values(data, "BH")
+    rows = []
+    for bh in bhs:
+        local = dict(filters); local["bh"] = [bh]
+        actual = filter_df(data[sheet], sheet, local)
+        actual = mtd(actual, date_col, period, as_of)
+        pipe = pd.DataFrame()
+        if pipeline_sheet:
+            pipe = filter_df(data[pipeline_sheet], pipeline_sheet, local)
+            pipe = pipeline(pipe, pipeline_date, period, as_of)
+        actual_value = actual[value_col].sum() if value_col else len(actual)
+        pipe_value = pipe[value_col].sum() if value_col else len(pipe)
+        rows.append({"BH": bh, "MTD": actual_value, "Pipeline": pipe_value, "Projection": actual_value + pipe_value})
+    return pd.DataFrame(rows)
+
+# =========================================================
+# GENERIC CHART HELPERS
+# =========================================================
+def bar_chart(df, x, y, title, color=None, horizontal=False, height=380):
+    fig = px.bar(df, x=x, y=y, color=color, orientation="h" if horizontal else "v", text_auto=True, height=height)
+    fig.update_layout(
+        title=dict(text=title, x=0.02, font=dict(size=15)),
+        margin=dict(l=10, r=10, t=45, b=45), paper_bgcolor="#f7f9fc", plot_bgcolor="#f7f9fc",
+        legend_title="", hovermode="x unified",
+    )
+    return fig
+
+
+def line_chart(df, x, y, title, color=None, height=390):
+    fig = px.line(df, x=x, y=y, color=color, markers=True, height=height)
+    fig.update_layout(
+        title=dict(text=title, x=0.02, font=dict(size=15)),
+        margin=dict(l=10, r=10, t=45, b=45), paper_bgcolor="#f7f9fc", plot_bgcolor="#f7f9fc",
+        legend_title="", hovermode="x unified",
+    )
+    return fig
+
+
+def doughnut(values, labels, title):
+    fig = go.Figure(go.Pie(labels=labels, values=values, hole=.58, textinfo="label+value"))
+    fig.update_layout(title=dict(text=title, x=.02, font=dict(size=15)), height=360, margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="#f7f9fc")
+    return fig
+
+
+def daily_event(data, sheet, date_col, period, as_of, filters, value_col=None):
+    x = filter_df(data[sheet], sheet, filters)
+    x = mtd(x, date_col, period, as_of)
+    if x.empty:
+        return pd.DataFrame(columns=["Date", "Value"])
+    if value_col:
+        s = x.groupby(date_col)[value_col].sum()
+    else:
+        s = x.groupby(date_col).size()
+    out = s.rename("Value").reset_index().rename(columns={date_col:"Date"})
+    return out
+
+
+def month_series(data, sheet, date_col, filters, start_period, end_period, value_col=None):
+    x = filter_df(data[sheet], sheet, filters)
+    x = x[(x[date_col] >= start_period.start_time) & (x[date_col] <= end_period.end_time)]
+    if x.empty:
+        return pd.DataFrame(columns=["Month", "Value"])
+    if value_col:
+        s = x.groupby(x[date_col].dt.to_period("M"))[value_col].sum()
+    else:
+        s = x.groupby(x[date_col].dt.to_period("M")).size()
+    out = s.rename("Value").reset_index()
+    out["Month"] = out[date_col].astype(str)
+    return out[["Month","Value"]]
+
+# =========================================================
+# LOAD WORKBOOK
+# =========================================================
 repo_bytes = get_repo_bytes()
 
 with st.sidebar:
-    st.title("CEO Dashboard")
-    st.caption("Business Head / Client performance")
+    st.markdown("### ⚙️ Dashboard Controls")
+    uploaded = st.file_uploader("Test updated Excel", type=["xlsx"], help="Production: replace CEO_MongoDB.xlsx in GitHub.")
+    if st.button("↻ Refresh Data", use_container_width=True):
+        st.cache_data.clear(); st.rerun()
 
-    uploaded = st.file_uploader(
-        "Optional: test with an updated Excel file",
-        type=["xlsx"],
-        help="For production, keep CEO_MongoDB.xlsx in the same GitHub repository as app.py.",
-    )
-
-    if uploaded is not None:
-        source_bytes = uploaded.getvalue()
-        source_name = uploaded.name
-    elif repo_bytes is not None:
-        source_bytes = None
-        source_name = "CEO_MongoDB.xlsx (repository)"
-    else:
-        source_bytes = None
-        source_name = None
-
-    if st.button("↻ Refresh data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-if source_name is None:
-    st.error("CEO_MongoDB.xlsx was not found beside app.py. Add the workbook to the GitHub repository.")
+if uploaded is not None:
+    data = load_workbook(source_bytes=uploaded.getvalue())
+    source_name = uploaded.name
+elif repo_bytes is not None:
+    data = load_workbook(source_path=str(REPO_FILE))
+    source_name = "CEO_MongoDB.xlsx"
+else:
+    st.error("CEO_MongoDB.xlsx was not found beside app.py.")
     st.stop()
 
-try:
-    if uploaded is not None:
-        data = load_workbook(source_bytes=source_bytes)
-    else:
-        data = load_workbook(source_path=str(REPO_FILE))
-except Exception as e:
-    st.error(f"Could not load the workbook: {e}")
-    st.stop()
-
-# -----------------------------
-# Determine periods / default as-of
-# -----------------------------
-all_dates = []
+# =========================================================
+# PERIOD + GLOBAL FILTERS
+# =========================================================
+periods = set()
 for s, cfg in SHEET_MAP.items():
     d = data[s][cfg["date"]].dropna()
-    if not d.empty:
-        all_dates.append(d.max())
-latest_available = max(all_dates).normalize()
-
-period_values = set()
-for s, cfg in SHEET_MAP.items():
-    d = data[s][cfg["date"]].dropna()
-    period_values.update(d.dt.to_period("M").tolist())
-
-periods = sorted(period_values)
-period_labels = [month_label(p.start_time) for p in periods]
-default_idx = period_labels.index(month_label(latest_available)) if month_label(latest_available) in period_labels else len(period_labels)-1
+    periods.update(d.dt.to_period("M").tolist())
+periods = sorted(periods)
+period_labels = [month_label(p) for p in periods]
+latest_available = max([data[s][SHEET_MAP[s]["date"]].dropna().max() for s in SHEET_MAP])
+default_idx = max(0, period_labels.index(month_label(latest_available)) if month_label(latest_available) in period_labels else len(period_labels)-1)
 
 with st.sidebar:
     selected_label = st.selectbox("Reporting Month", period_labels, index=default_idx)
-    selected_period = pd.Period(pd.to_datetime("01-"+selected_label.replace("'", "-"), format="%d-%b-%y"), freq="M")
+    selected_period = period_from_label(selected_label)
 
-    # Default to latest usable date for selected month, but never beyond today.
-    dates_for_period = []
+    # As-of range is always valid, including future workbook months.
+    today = pd.Timestamp.today().normalize()
+    date_min = selected_period.start_time.date()
+    date_max = max(date_min, min(selected_period.end_time.date(), today.date()))
+    month_dates = []
     for s, cfg in SHEET_MAP.items():
         d = data[s][cfg["date"]].dropna()
         d = d[d.dt.to_period("M") == selected_period]
-        if not d.empty:
-            dates_for_period.append(d.max())
-    default_asof = min(max(dates_for_period), pd.Timestamp.today().normalize()) if dates_for_period else pd.Timestamp.today().normalize()
-    as_of = st.date_input("DOD / As-of Date", value=default_asof.date(), min_value=selected_period.start_time.date(), max_value=min(selected_period.end_time.date(), pd.Timestamp.today().date()))
-    as_of = pd.Timestamp(as_of)
+        if not d.empty: month_dates.append(d.max())
+    default_asof = max(selected_period.start_time.normalize(), min(max(month_dates) if month_dates else today, today, selected_period.end_time.normalize()))
+    default_asof = max(selected_period.start_time.normalize(), min(default_asof, pd.Timestamp(date_max)))
+    as_of = pd.Timestamp(st.date_input("DOD / As-of Date", value=default_asof.date(), min_value=date_min, max_value=date_max))
 
-    # BH filter
-    bh_values = sorted(set().union(*[set(data[s]["BH"].dropna().astype(str).unique()) for s in SHEET_MAP]))
-    selected_bhs = st.multiselect("Business Head", bh_values, default=[])
+    bh_values = universe_values(data, "BH")
+    kam_values = universe_values(data, "KAM")
+    domain_values = universe_values(data, "Domain")
+    client_values = universe_values(data, "company_name")
+    # Include Demand/Submission client variants.
+    client_values = sorted(set(client_values + universe_values(data, "Company_name") + universe_values(data, "client")))
 
-    # KAM filter
-    kam_values = sorted(set().union(*[set(data[s]["KAM"].dropna().astype(str).unique()) for s in SHEET_MAP]))
-    selected_kams = st.multiselect("KAM", kam_values, default=[])
+    selected_bh = st.multiselect("Business Head", bh_values)
+    selected_kam = st.multiselect("KAM", kam_values)
+    selected_domain = st.multiselect("Domain", domain_values)
+    selected_client = st.multiselect("Client", client_values)
 
-# -----------------------------
-# Main title
-# -----------------------------
-st.title("CEO Business Performance Dashboard")
+filters = {"bh": selected_bh, "kam": selected_kam, "domain": selected_domain, "client": selected_client}
+
+# =========================================================
+# HERO
+# =========================================================
 st.markdown(
-    f"**Reporting Month:** {selected_label} &nbsp; | &nbsp; "
-    f"**As of:** {as_of.strftime('%d %b %Y')} &nbsp; | &nbsp; "
-    f"**Data Source:** {source_name}"
-)
-st.caption("PO and Margin are displayed in ₹ Lakhs. Projection = MTD + future pipeline within the selected month. Net = Onboarding − Exit.")
-
-bh_df = agg_bh(
-    data,
-    selected_period,
-    as_of,
-    bh_filter=selected_bhs or None,
-    kam_filter=selected_kams or None,
+    f'''<div class="hero"><h1>📊 CEO BUSINESS PERFORMANCE COCKPIT</h1>
+    <p>{selected_label} &nbsp;•&nbsp; DOD {as_of.strftime('%d %b %Y')} &nbsp;•&nbsp; PO / Margin shown in ₹ Lakhs &nbsp;•&nbsp; Source: {source_name}</p></div>''',
+    unsafe_allow_html=True,
 )
 
-# -----------------------------
-# KPI cards
-# -----------------------------
-tot = bh_df.sum(numeric_only=True)
-c = st.columns(6)
-with c[0]: metric_card("Demand", fmt_num(tot["Demand"]), "MTD openings")
-with c[1]: metric_card("Submissions", fmt_num(tot["Submissions"]), "MTD")
-with c[2]: metric_card("Interview", fmt_num(tot["Interview"]), "MTD")
-with c[3]: metric_card("Selection", fmt_num(tot["Selections"]), "MTD")
-with c[4]: metric_card("Onboarding", fmt_num(tot["Onboarding"]), f"MTD | {fmt_lakh(tot['OB PO (L)'])} L PO")
-with c[5]: metric_card("Exited", fmt_num(tot["Exited"]), f"MTD | {fmt_lakh(tot['Exit PO (L)'])} L PO")
+# =========================================================
+# CEO OVERVIEW
+# =========================================================
+m = overall_metrics(data, selected_period, as_of, filters)
+ob_proj = m["ob_hc"] + m["ob_pipe_hc"]
+ex_proj = m["exit_hc"] + m["exit_pipe_hc"]
+net_mtd = m["ob_hc"] - m["exit_hc"]
+net_proj = ob_proj - ex_proj
 
-c2 = st.columns(6)
-with c2[0]: metric_card("MTD Net", fmt_num(tot["MTD Net"]), "OB − Exit")
-with c2[1]: metric_card("OB Pipeline", fmt_num(tot["OB Pipeline"]), f"{fmt_lakh(tot['OB Pipeline PO (L)'])} L PO")
-with c2[2]: metric_card("OB Projection", fmt_num(tot["OB Projection"]), "MTD + Pipeline")
-with c2[3]: metric_card("Exit Pipeline", fmt_num(tot["Exit Pipeline"]), f"{fmt_lakh(tot['Exit Pipeline PO (L)'])} L PO")
-with c2[4]: metric_card("Exit Projection", fmt_num(tot["Exit Projection"]), "MTD + Pipeline")
-with c2[5]: metric_card("Net Projection", fmt_num(tot["Net Projection"]), "OB Projection − Exit Projection")
+st.markdown('<div class="section-title">CEO Snapshot — MTD & Projection</div>', unsafe_allow_html=True)
+row1 = st.columns(6)
+for col, label, value, sub, kind in [
+    (row1[0], "MTD Demand", fmt_int(m["demand"]), "Openings", "blue"),
+    (row1[1], "MTD Submission", fmt_int(m["submission"]), "Candidates submitted", "blue"),
+    (row1[2], "MTD Interview", fmt_int(m["interview"]), "Interviews", "blue"),
+    (row1[3], "MTD Selection", fmt_int(m["selection"]), "Selections", "blue"),
+    (row1[4], "MTD Onboarding", fmt_int(m["ob_hc"]), f"PO {fmt_lakh(m['ob_po'])} | Margin {fmt_lakh(m['ob_margin'])}", "green"),
+    (row1[5], "MTD Exit", fmt_int(m["exit_hc"]), f"PO {fmt_lakh(m['exit_po'])} | Margin {fmt_lakh(m['exit_margin'])}", "red"),
+]:
+    with col: metric_card(label, value, sub, kind)
 
-# -----------------------------
-# Tabs
-# -----------------------------
-tab1, tab2, tab3, tab4 = st.tabs(["BH CEO View", "Client View", "DOD Trend", "Data Quality"])
+row2 = st.columns(6)
+for col, label, value, sub, kind in [
+    (row2[0], "MTD Net", fmt_int(net_mtd), "Onboarding − Exit", "green"),
+    (row2[1], "OB Projection", fmt_int(ob_proj), f"{m['ob_pipe_hc']:,} pipeline", "green"),
+    (row2[2], "Exit Projection", fmt_int(ex_proj), f"{m['exit_pipe_hc']:,} pipeline", "red"),
+    (row2[3], "Net Projection", fmt_int(net_proj), "OB Projection − Exit Projection", "dark"),
+    (row2[4], "OB Margin %", f"{pct(m['ob_margin'], m['ob_po']):.1f}%", f"PO {fmt_lakh(m['ob_po'])}", "gold"),
+    (row2[5], "Exit Margin %", f"{pct(m['exit_margin'], m['exit_po']):.1f}%", f"PO {fmt_lakh(m['exit_po'])}", "gold"),
+]:
+    with col: metric_card(label, value, sub, kind)
 
-with tab1:
-    st.subheader("Business Head Scorecard")
-    st.caption("All counts are MTD to the selected as-of date. Pipeline is future-dated within the selected reporting month.")
+# Main CEO charts
+bh = bh_scorecard(data, selected_period, as_of, filters)
+if not bh.empty:
+    c1, c2 = st.columns(2)
+    with c1:
+        plot = bh[["BH","Demand","Submission","Interview","Selection"]].melt("BH", var_name="Metric", value_name="Count")
+        st.plotly_chart(bar_chart(plot, "BH", "Count", "BH-wise Funnel — MTD", "Metric", height=410), use_container_width=True)
+    with c2:
+        plot = bh[["BH","OB MTD","OB Pipeline","Exit MTD","Exit Pipeline"]].melt("BH", var_name="Metric", value_name="HC")
+        st.plotly_chart(bar_chart(plot, "BH", "HC", "BH-wise Onboarding vs Exit", "Metric", height=410), use_container_width=True)
 
-    display_cols = [
-        "BH", "Active HC", "Active PO (L)", "Active Margin (L)",
-        "Demand", "Submissions", "Interview", "Selections",
-        "Onboarding", "OB PO (L)", "OB Margin (L)",
-        "OB Pipeline", "OB Pipeline PO (L)", "OB Projection",
-        "Exited", "Exit PO (L)", "Exit Pipeline", "Exit Projection",
-        "MTD Net", "Net Projection",
-    ]
-    table = bh_df[display_cols].copy()
-    table = table.sort_values(["Net Projection", "Onboarding"], ascending=[False, False])
+    c3, c4 = st.columns([1.3, 1])
+    with c3:
+        st.markdown('<div class="section-title">CEO BH Scorecard</div>', unsafe_allow_html=True)
+        cols = ["BH","Demand","Submission","Interview","Selection","OB MTD","OB Pipeline","OB Projection","Exit MTD","Exit Pipeline","Exit Projection","MTD Net","Net Projection","OB PO (L)","OB Margin (L)","Exit PO (L)","Exit Margin (L)"]
+        st.dataframe(bh[cols].sort_values("Net Projection", ascending=False).style.format({c:"{:,.1f}" for c in cols if "(L)" in c}), use_container_width=True, height=430)
+    with c4:
+        st.plotly_chart(doughnut([m["ob_hc"], m["exit_hc"]], ["Onboarding","Exit"], "MTD HC Movement"), use_container_width=True)
 
-    st.dataframe(
-        table.style.format({
-            c: "{:,.1f}" for c in table.columns if "(L)" in c
-        }).format({
-            c: "{:,.0f}" for c in table.columns if c not in ["BH"] and "(L)" not in c
-        }),
-        use_container_width=True,
-        height=560,
-    )
+# =========================================================
+# ANALYTICAL TABS
+# =========================================================
+tabs = st.tabs(["🏠 CEO Overview", "📥 Demand", "📤 Submission", "🎯 Interview", "🟢 Onboarding", "🔴 Exit", "⚖️ Net & Projection"])
 
-    st.subheader("BH Onboarding vs Exit")
-    chart_df = bh_df[["BH", "Onboarding", "OB Pipeline", "Exited", "Exit Pipeline"]].melt(
-        id_vars="BH", var_name="Metric", value_name="HC"
-    )
-    fig = px.bar(
-        chart_df, x="BH", y="HC", color="Metric", barmode="group",
-        text_auto=True, height=430,
-    )
-    fig.update_layout(margin=dict(l=10,r=10,t=20,b=80), legend_title="")
-    st.plotly_chart(fig, use_container_width=True)
+# ---- CEO Overview duplicate compact section ----
+with tabs[0]:
+    st.markdown('<div class="section-title">Executive Movement</div>', unsafe_allow_html=True)
+    daily_parts = []
+    for name, sheet, dc in [("Demand","Demand","Created_at"),("Submission","Submission","date"),("Interview","Interview","Interview_date"),("Selection","Selection","selection_date"),("Onboarding","Onboarding","display_date"),("Exit","Exit","last_work_day")]:
+        dd = daily_event(data, sheet, dc, selected_period, as_of, filters)
+        if not dd.empty:
+            dd["Metric"] = name
+            daily_parts.append(dd)
+    if daily_parts:
+        daily_all = pd.concat(daily_parts, ignore_index=True)
+        st.plotly_chart(line_chart(daily_all, "Date", "Value", "Daily Operating Trend", "Metric", height=440), use_container_width=True)
 
-    st.subheader("BH PO & Margin — ₹ Lakhs")
-    pm = bh_df[["BH", "OB PO (L)", "OB Margin (L)", "OB Pipeline PO (L)", "OB Pipeline Margin (L)",
-                "Exit PO (L)", "Exit Margin (L)", "Exit Pipeline PO (L)", "Exit Pipeline Margin (L)"]].copy()
-    pm["OB Projection PO (L)"] = pm["OB PO (L)"] + pm["OB Pipeline PO (L)"]
-    pm["Exit Projection PO (L)"] = pm["Exit PO (L)"] + pm["Exit Pipeline PO (L)"]
-    pmm = pm[["BH", "OB Projection PO (L)", "Exit Projection PO (L)", "OB Margin (L)", "Exit Margin (L)"]].melt(
-        id_vars="BH", var_name="Metric", value_name="₹ Lakhs"
-    )
-    fig2 = px.bar(pmm, x="BH", y="₹ Lakhs", color="Metric", barmode="group", height=430)
-    fig2.update_layout(margin=dict(l=10,r=10,t=20,b=80), legend_title="")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.markdown('<div class="section-title">Conversion Indicators</div>', unsafe_allow_html=True)
+    conv = pd.DataFrame({
+        "Funnel": ["Demand → Submission", "Submission → Interview", "Interview → Selection", "Selection → Onboarding"],
+        "Rate": [
+            100*m["submission"]/m["demand"] if m["demand"] else 0,
+            100*m["interview"]/m["submission"] if m["submission"] else 0,
+            100*m["selection"]/m["interview"] if m["interview"] else 0,
+            100*m["ob_hc"]/m["selection"] if m["selection"] else 0,
+        ]
+    })
+    st.plotly_chart(bar_chart(conv, "Funnel", "Rate", "MTD Funnel Conversion %", height=350), use_container_width=True)
 
-with tab2:
-    st.subheader("Client-Level Drilldown")
-    client_df = client_detail(data, selected_period, as_of, selected_bhs or None, selected_kams or None)
-    search = st.text_input("Search client", "")
-    if search:
-        client_df = client_df[client_df["Client"].str.contains(search, case=False, na=False)]
+# ---- Demand ----
+with tabs[1]:
+    d = filter_df(data["Demand"], "Demand", filters)
+    dm = mtd(d, "Created_at", selected_period, as_of)
+    total = dm["no_of_opening"].sum()
+    avg = total / max(1, (as_of - selected_period.start_time.normalize()).days + 1)
+    c = st.columns(4)
+    with c[0]: metric_card("MTD Demand", fmt_int(total), "Sum of no_of_opening", "blue")
+    with c[1]: metric_card("Avg Demand / Day", f"{avg:.1f}", "MTD run-rate", "dark")
+    with c[2]: metric_card("Clients with Demand", fmt_int(dm[SHEET_MAP['Demand']['client']].nunique()), "Distinct clients", "gold")
+    with c[3]: metric_card("BHs with Demand", fmt_int(dm["BH"].nunique()), "Distinct BHs", "gold")
+    c1,c2=st.columns(2)
+    with c1:
+        dd = dm.groupby("Created_at")["no_of_opening"].sum().reset_index(name="Demand")
+        st.plotly_chart(line_chart(dd,"Created_at","Demand","DOD Demand Trend",height=390),use_container_width=True)
+    with c2:
+        cd = dm.groupby(SHEET_MAP["Demand"]["client"])["no_of_opening"].sum().reset_index().sort_values("no_of_opening",ascending=False).head(20)
+        st.plotly_chart(bar_chart(cd,SHEET_MAP["Demand"]["client"],"no_of_opening","Top 20 Clients by Demand",height=390),use_container_width=True)
+    bhd = dm.groupby("BH")["no_of_opening"].sum().reset_index().sort_values("no_of_opening",ascending=False)
+    st.plotly_chart(bar_chart(bhd,"BH","no_of_opening","BH-wise MTD Demand",height=380),use_container_width=True)
+    st.markdown('<div class="section-title">Client Demand Detail</div>',unsafe_allow_html=True)
+    detail = dm.groupby([SHEET_MAP["Demand"]["client"],"BH","KAM","Domain"],dropna=False)["no_of_opening"].sum().reset_index().sort_values("no_of_opening",ascending=False)
+    st.dataframe(detail,use_container_width=True,height=430,hide_index=True)
 
-    cols = [
-        "Client","BH","KAM","Active HC","Active PO (L)","Active Margin (L)",
-        "Demand","Submissions","Interview","Selections","Onboarding","OB PO (L)",
-        "OB Pipeline","OB Pipeline PO (L)","OB Projection","Exited","Exit PO (L)",
-        "Exit Pipeline","Exit Pipeline PO (L)","Exit Projection","MTD Net","Net Projection"
-    ]
-    st.dataframe(
-        client_df[cols].sort_values("Net Projection", ascending=False).style.format(
-            {c:"{:,.1f}" for c in cols if "(L)" in c}
-        ).format(
-            {c:"{:,.0f}" for c in cols if c not in ["Client","BH","KAM"] and "(L)" not in c}
-        ),
-        use_container_width=True,
-        height=620,
-    )
+# ---- Submission ----
+with tabs[2]:
+    s = filter_df(data["Submission"], "Submission", filters)
+    sm = mtd(s,"date",selected_period,as_of)
+    c=st.columns(4)
+    with c[0]: metric_card("MTD Submissions",fmt_int(len(sm)),"Candidate submissions","blue")
+    with c[1]: metric_card("Avg / Day",f"{len(sm)/max(1,(as_of-selected_period.start_time.normalize()).days+1):.1f}","Submission run-rate","dark")
+    with c[2]: metric_card("Active Clients",fmt_int(sm["client"].nunique()),"Distinct clients","gold")
+    with c[3]: metric_card("Submission / Demand",f"{100*len(sm)/m['demand']:.1f}%" if m['demand'] else "0.0%","MTD conversion","green")
+    c1,c2=st.columns(2)
+    with c1:
+        dd=sm.groupby("date").size().reset_index(name="Submissions")
+        st.plotly_chart(line_chart(dd,"date","Submissions","DOD Submission Trend",height=390),use_container_width=True)
+    with c2:
+        cd=sm.groupby("client").size().reset_index(name="Submissions").sort_values("Submissions",ascending=False).head(20)
+        st.plotly_chart(bar_chart(cd,"client","Submissions","Top 20 Clients by Submission",height=390),use_container_width=True)
+    bhd=sm.groupby("BH").size().reset_index(name="Submissions").sort_values("Submissions",ascending=False)
+    st.plotly_chart(bar_chart(bhd,"BH","Submissions","BH-wise MTD Submission",height=380),use_container_width=True)
 
-with tab3:
-    st.subheader("Daily Operating Trend")
-    start = month_start(selected_period)
-    end = min(month_end(selected_period), as_of)
-    dates = pd.date_range(start, end, freq="D")
-    daily = pd.DataFrame({"Date": dates})
+# ---- Interview ----
+with tabs[3]:
+    i = filter_df(data["Interview"], "Interview", filters)
+    im = mtd(i,"Interview_date",selected_period,as_of)
+    c=st.columns(5)
+    with c[0]: metric_card("MTD Interviews",fmt_int(len(im)),"Interview events","blue")
+    with c[1]: metric_card("Avg / Day",f"{len(im)/max(1,(as_of-selected_period.start_time.normalize()).days+1):.1f}","Interview run-rate","dark")
+    with c[2]: metric_card("Clients",fmt_int(im["company_name"].nunique()),"Distinct clients","gold")
+    with c[3]: metric_card("Interview → Selection",f"{100*m['selection']/len(im):.1f}%" if len(im) else "0.0%","MTD conversion","green")
+    with c[4]: metric_card("Selection",fmt_int(m["selection"]),"MTD","green")
+    c1,c2=st.columns(2)
+    with c1:
+        dd=im.groupby("Interview_date").size().reset_index(name="Interviews")
+        st.plotly_chart(line_chart(dd,"Interview_date","Interviews","DOD Interview Trend",height=390),use_container_width=True)
+    with c2:
+        cd=im.groupby("company_name").size().reset_index(name="Interviews").sort_values("Interviews",ascending=False).head(20)
+        st.plotly_chart(bar_chart(cd,"company_name","Interviews","Top 20 Clients by Interview",height=390),use_container_width=True)
+    bhd=im.groupby("BH").size().reset_index(name="Interviews").sort_values("Interviews",ascending=False)
+    st.plotly_chart(bar_chart(bhd,"BH","Interviews","BH-wise MTD Interview",height=380),use_container_width=True)
 
-    def daily_count(sheet, date_col, value_col=None):
-        df = data[sheet].copy()
-        df = df[(df["BH"].isin(selected_bhs))] if selected_bhs else df
-        df = df[(df["KAM"].isin(selected_kams))] if selected_kams else df
-        df = df[(df[date_col] >= start) & (df[date_col] <= end)]
-        if value_col:
-            return df.groupby(date_col)[value_col].sum()
-        return df.groupby(date_col).size()
+# ---- Onboarding ----
+with tabs[4]:
+    ob = filter_df(data["Onboarding"],"Onboarding",filters)
+    obm = mtd(ob,"display_date",selected_period,as_of)
+    obp = pipeline(filter_df(data["Onboarding Pipeline"],"Onboarding Pipeline",filters),"display_date",selected_period,as_of)
+    po=obm["p_o_value"].sum(); mar=obm["margin"].sum(); proj=len(obm)+len(obp)
+    c=st.columns(6)
+    with c[0]: metric_card("MTD OB HC",fmt_int(len(obm)),"Onboarded","green")
+    with c[1]: metric_card("MTD OB PO",fmt_lakh(po),"₹ Lakhs","green")
+    with c[2]: metric_card("MTD OB Margin",fmt_lakh(mar),"₹ Lakhs","green")
+    with c[3]: metric_card("OB Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold")
+    with c[4]: metric_card("OB Pipeline",fmt_int(len(obp)),"After DOD in month","dark")
+    with c[5]: metric_card("OB Projection",fmt_int(proj),"MTD + Pipeline","green")
 
-    for name, sheet, date_col in [
-        ("Demand","Demand","Created_at"),
-        ("Submissions","Submission","date"),
-        ("Interview","Interview","Interview_date"),
-        ("Selection","Selection","selection_date"),
-        ("Onboarding","Onboarding","display_date"),
-        ("Exit","Exit","last_work_day"),
-    ]:
-        ser = daily_count(sheet, date_col).rename(name)
-        daily = daily.merge(ser, left_on="Date", right_index=True, how="left")
-    daily = daily.fillna(0)
-    daily["MTD Net"] = daily["Onboarding"].cumsum() - daily["Exit"].cumsum()
+    # MOM onboarding — last 9 months including selected month
+    start9 = selected_period - 8
+    months = pd.period_range(start9, selected_period, freq="M")
+    mom_rows=[]
+    for p in months:
+        x=filter_df(data["Onboarding"],"Onboarding",filters)
+        x=x[x["display_date"].dt.to_period("M")==p]
+        mom_rows.append({"Month":month_label(p),"HC":len(x),"PO (L)":money_lakh(x["p_o_value"].sum()),"Margin (L)":money_lakh(x["margin"].sum())})
+    mom=pd.DataFrame(mom_rows)
+    c1,c2=st.columns(2)
+    with c1:
+        st.plotly_chart(bar_chart(mom,"Month","HC","Month-on-Month Onboarding HC — Last 9 Months",height=390),use_container_width=True)
+    with c2:
+        fig=go.Figure()
+        fig.add_trace(go.Bar(x=mom["Month"],y=mom["PO (L)"],name="PO (L)"))
+        fig.add_trace(go.Scatter(x=mom["Month"],y=mom["Margin (L)"],name="Margin (L)",mode="lines+markers",yaxis="y2"))
+        fig.update_layout(title="Onboarding PO vs Margin",height=390,margin=dict(l=10,r=10,t=45,b=45),paper_bgcolor="#f7f9fc",plot_bgcolor="#f7f9fc",yaxis=dict(title="PO (L)"),yaxis2=dict(title="Margin (L)",overlaying="y",side="right"))
+        st.plotly_chart(fig,use_container_width=True)
 
-    trend_metrics = st.multiselect(
-        "Trend metrics",
-        ["Demand","Submissions","Interview","Selection","Onboarding","Exit","MTD Net"],
-        default=["Demand","Onboarding","Exit","MTD Net"]
-    )
-    if trend_metrics:
-        plot = daily[["Date"] + trend_metrics].melt(id_vars="Date", var_name="Metric", value_name="HC")
-        fig = px.line(plot, x="Date", y="HC", color="Metric", markers=True, height=470)
-        fig.update_layout(margin=dict(l=10,r=10,t=20,b=30), legend_title="")
-        st.plotly_chart(fig, use_container_width=True)
+    c1,c2=st.columns(2)
+    with c1:
+        dd=obm.groupby("display_date").size().reset_index(name="Onboarding")
+        st.plotly_chart(line_chart(dd,"display_date","Onboarding","DOD Onboarding Trend",height=390),use_container_width=True)
+    with c2:
+        cd=obm.groupby("company_name").size().reset_index(name="Onboarding").sort_values("Onboarding",ascending=False).head(20)
+        st.plotly_chart(bar_chart(cd,"company_name","Onboarding","Top 20 Clients by MTD Onboarding",height=390),use_container_width=True)
 
-    st.subheader("Daily Data Table")
-    st.dataframe(daily, use_container_width=True, height=400)
+    c1,c2=st.columns(2)
+    with c1:
+        bhd=obm.groupby("BH").agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index()
+        bhd["PO (L)"]=bhd["PO"]/100000; bhd["Margin (L)"]=bhd["Margin"]/100000
+        st.plotly_chart(bar_chart(bhd,"BH","HC","BH-wise MTD Onboarding",height=390),use_container_width=True)
+    with c2:
+        dom=obm.groupby("Domain").size().reset_index(name="HC")
+        st.plotly_chart(doughnut(dom["HC"].tolist(),dom["Domain"].tolist(),"Onboarding by Domain"),use_container_width=True)
 
-with tab4:
-    st.subheader("Data Quality & Refresh Diagnostics")
-    quality_rows = []
-    for s, cfg in SHEET_MAP.items():
-        df = data[s]
-        d = df[cfg["date"]]
-        quality_rows.append({
-            "Sheet": s,
-            "Rows": len(df),
-            "Date Column": cfg["date"],
-            "Valid Dates": int(d.notna().sum()),
-            "Blank Dates": int(d.isna().sum()),
-            "Latest Date": d.max(),
-            "Blank BH": int(df["BH"].isna().sum()),
-            "Blank KAM": int(df["KAM"].isna().sum()),
-        })
-    q = pd.DataFrame(quality_rows)
-    st.dataframe(q, use_container_width=True, hide_index=True)
+    st.markdown('<div class="section-title">Onboarding Client Detail — HC / PO / Margin</div>',unsafe_allow_html=True)
+    cd=obm.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index()
+    cd["PO (L)"]=cd["PO"]/100000; cd["Margin (L)"]=cd["Margin"]/100000; cd["Margin %"]=np.where(cd["PO"]!=0,cd["Margin"]/cd["PO"]*100,0)
+    st.dataframe(cd[["company_name","BH","KAM","Domain","HC","PO (L)","Margin (L)","Margin %"]].sort_values("HC",ascending=False).style.format({"PO (L)":"{:,.1f}","Margin (L)":"{:,.1f}","Margin %":"{:,.1f}%"}),use_container_width=True,height=400,hide_index=True)
 
-    st.info(
-        "Production refresh: replace/commit CEO_MongoDB.xlsx in the same GitHub repository. "
-        "Streamlit Cloud will redeploy the repository; use the Refresh data button to clear the app cache."
-    )
+# ---- Exit ----
+with tabs[5]:
+    ex = filter_df(data["Exit"],"Exit",filters)
+    exm = mtd(ex,"last_work_day",selected_period,as_of)
+    exp = pipeline(filter_df(data["Exit Pipeline"],"Exit Pipeline",filters),"tentative_exit_date",selected_period,as_of)
+    po=exm["p_o_value"].sum(); mar=exm["margin"].sum(); proj=len(exm)+len(exp)
+    c=st.columns(6)
+    with c[0]: metric_card("MTD Exit HC",fmt_int(len(exm)),"Exited","red")
+    with c[1]: metric_card("MTD Exit PO",fmt_lakh(po),"₹ Lakhs","red")
+    with c[2]: metric_card("MTD Exit Margin",fmt_lakh(mar),"₹ Lakhs","red")
+    with c[3]: metric_card("Exit Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold")
+    with c[4]: metric_card("Exit Pipeline",fmt_int(len(exp)),"After DOD in month","dark")
+    with c[5]: metric_card("Exit Projection",fmt_int(proj),"MTD + Pipeline","red")
 
-    st.subheader("Business Rules Applied")
-    st.markdown("""
-    - **Demand:** sum `no_of_opening`, using `Created_at`.
-    - **Submission:** row count, using `date`.
-    - **Interview:** row count, using `Interview_date`.
-    - **Selection:** row count, using `selection_date`.
-    - **Onboarding:** row count + PO/Margin, using `display_date`.
-    - **Onboarding Pipeline:** future rows in the selected month after the as-of date, using `display_date`.
-    - **Exit:** row count + PO/Margin, using `last_work_day`.
-    - **Exit Pipeline:** future rows in the selected month after the as-of date, using `tentative_exit_date`.
-    - **MTD Net:** Onboarding − Exit.
-    - **Projection:** MTD + future pipeline.
-    - **Net Projection:** Onboarding Projection − Exit Projection.
-    - **Active Headcount:** latest available snapshot on/before the as-of date; PO/Margin shown in ₹ Lakhs.
-    """)
+    start9=selected_period-8; months=pd.period_range(start9,selected_period,freq="M")
+    rows=[]
+    for p in months:
+        x=filter_df(data["Exit"],"Exit",filters); x=x[x["last_work_day"].dt.to_period("M")==p]
+        rows.append({"Month":month_label(p),"HC":len(x),"PO (L)":money_lakh(x["p_o_value"].sum()),"Margin (L)":money_lakh(x["margin"].sum())})
+    mom=pd.DataFrame(rows)
+    c1,c2=st.columns(2)
+    with c1: st.plotly_chart(bar_chart(mom,"Month","HC","Month-on-Month Exit HC — Last 9 Months",height=390),use_container_width=True)
+    with c2:
+        fig=go.Figure(); fig.add_trace(go.Bar(x=mom["Month"],y=mom["PO (L)"],name="PO (L)")); fig.add_trace(go.Scatter(x=mom["Month"],y=mom["Margin (L)"],name="Margin (L)",mode="lines+markers",yaxis="y2"))
+        fig.update_layout(title="Exit PO vs Margin",height=390,margin=dict(l=10,r=10,t=45,b=45),paper_bgcolor="#f7f9fc",plot_bgcolor="#f7f9fc",yaxis=dict(title="PO (L)"),yaxis2=dict(title="Margin (L)",overlaying="y",side="right"))
+        st.plotly_chart(fig,use_container_width=True)
+    c1,c2=st.columns(2)
+    with c1:
+        dd=exm.groupby("last_work_day").size().reset_index(name="Exit")
+        st.plotly_chart(line_chart(dd,"last_work_day","Exit","DOD Exit Trend",height=390),use_container_width=True)
+    with c2:
+        cd=exm.groupby("company_name").size().reset_index(name="Exit").sort_values("Exit",ascending=False).head(20)
+        st.plotly_chart(bar_chart(cd,"company_name","Exit","Top 20 Clients by MTD Exit",height=390),use_container_width=True)
+    st.markdown('<div class="section-title">Exit Client Detail — HC / PO / Margin</div>',unsafe_allow_html=True)
+    cd=exm.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index()
+    cd["PO (L)"]=cd["PO"]/100000; cd["Margin (L)"]=cd["Margin"]/100000; cd["Margin %"]=np.where(cd["PO"]!=0,cd["Margin"]/cd["PO"]*100,0)
+    st.dataframe(cd[["company_name","BH","KAM","Domain","HC","PO (L)","Margin (L)","Margin %"]].sort_values("HC",ascending=False).style.format({"PO (L)":"{:,.1f}","Margin (L)":"{:,.1f}","Margin %":"{:,.1f}%"}),use_container_width=True,height=400,hide_index=True)
 
-# Footer
-st.caption("CEO Performance Dashboard • Built from CEO_MongoDB.xlsx • Counts are headcount/opening events unless stated otherwise.")
+# ---- Net & Projection ----
+with tabs[6]:
+    st.markdown('<div class="section-title">Net Headcount & Projection Bridge</div>',unsafe_allow_html=True)
+    c=st.columns(6)
+    for col,label,value,sub,kind in [
+        (c[0],"OB MTD",fmt_int(m["ob_hc"]),"Actual","green"),(c[1],"OB Pipeline",fmt_int(m["ob_pipe_hc"]),"After DOD","green"),(c[2],"OB Projection",fmt_int(ob_proj),"MTD + Pipeline","green"),
+        (c[3],"Exit MTD",fmt_int(m["exit_hc"]),"Actual","red"),(c[4],"Exit Pipeline",fmt_int(m["exit_pipe_hc"]),"After DOD","red"),(c[5],"Net Projection",fmt_int(net_proj),"Projection Net","dark")]:
+        with col: metric_card(label,value,sub,kind)
+
+    bridge=pd.DataFrame({"Stage":["Opening Baseline","+ Onboarding MTD","+ OB Pipeline","− Exit MTD","− Exit Pipeline","Projected Net"],"HC":[0,m["ob_hc"],m["ob_pipe_hc"],-m["exit_hc"],-m["exit_pipe_hc"],net_proj]})
+    # waterfall
+    fig=go.Figure(go.Waterfall(x=bridge["Stage"],y=bridge["HC"],measure=["absolute","relative","relative","relative","relative","total"],text=bridge["HC"].map(lambda x:f"{x:+,}"),textposition="outside"))
+    fig.update_layout(title="Projection Bridge",height=420,margin=dict(l=10,r=10,t=45,b=45),paper_bgcolor="#f7f9fc",plot_bgcolor="#f7f9fc")
+    st.plotly_chart(fig,use_container_width=True)
+
+    score=bh.copy()
+    score["OB vs Exit MTD"]=score["OB MTD"]-score["Exit MTD"]
+    score["OB vs Exit Projection"]=score["OB Projection"]-score["Exit Projection"]
+    st.markdown('<div class="section-title">BH Net & Projection Scorecard</div>',unsafe_allow_html=True)
+    st.dataframe(score[["BH","OB MTD","OB Pipeline","OB Projection","Exit MTD","Exit Pipeline","Exit Projection","MTD Net","Net Projection","OB PO (L)","OB Margin (L)","Exit PO (L)","Exit Margin (L)"]].sort_values("Net Projection",ascending=False).style.format({c:"{:,.1f}" for c in ["OB PO (L)","OB Margin (L)","Exit PO (L)","Exit Margin (L)"]}),use_container_width=True,height=450,hide_index=True)
+
+# =========================================================
+# FOOTER / REFRESH RULE
+# =========================================================
+st.markdown("---")
+st.caption("CEO Business Performance Cockpit • Demand uses Created_at • Submission uses date • Interview uses Interview_date • Selection uses selection_date • Onboarding uses display_date • Exit uses last_work_day • Pipelines use dates after DOD within the selected month • PO/Margin are ₹ Lakhs.")
