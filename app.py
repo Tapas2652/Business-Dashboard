@@ -563,6 +563,63 @@ with tabs[6]:
     with c2: st.plotly_chart(clean_chart(px.line(nm,x="Month",y="Net",markers=True,text="Net",height=370),"Net HC Trend"),use_container_width=True)
     st.markdown('<div class="section-title">BH Net / Projection</div>',unsafe_allow_html=True)
     score=bh_scorecard(data,selected_period,as_of,filters)
-    st.dataframe(score[["BH","OB MTD","OB Pipeline","OB Projection","Exit MTD","Exit Pipeline","Exit Projection","MTD Net","Net Projection","OB PO (L)","OB Margin (L)","Exit PO (L)","Exit Margin (L)"]].sort_values("Net Projection",ascending=False).style.format({c:"{:,.1f}" for c in ["OB PO (L)","OB Margin (L)","Exit PO (L)","Exit Margin (L)"]}),use_container_width=True,height=440,hide_index=True)
+    # CEO scorecard order: Actual OB/Exit/Net, then Projection OB/Exit/Net.
+    score["Net PO (L)"] = score["OB PO (L)"] - score["Exit PO (L)"]
+    score["Net Margin (L)"] = score["OB Margin (L)"] - score["Exit Margin (L)"]
+    score["OB Projection PO (L)"] = score["OB PO (L)"] + score["OB Pipeline"] * 0
+    # Pull pipeline PO/Margin directly so projected financials are MTD + remaining pipeline.
+    for i, row in score.iterrows():
+        local = dict(filters); local["bh"] = [row["BH"]]
+        mm = overall_metrics(data, selected_period, as_of, local)
+        score.loc[i, "OB Projection PO (L)"] = money_lakh(mm["ob_po"] + mm["ob_pipe_po"])
+        score.loc[i, "OB Projection Margin (L)"] = money_lakh(mm["ob_margin"] + mm["ob_pipe_margin"])
+        score.loc[i, "Exit Projection PO (L)"] = money_lakh(mm["exit_po"] + mm["exit_pipe_po"])
+        score.loc[i, "Exit Projection Margin (L)"] = money_lakh(mm["exit_margin"] + mm["exit_pipe_margin"])
+    score["Net Projection PO (L)"] = score["OB Projection PO (L)"] - score["Exit Projection PO (L)"]
+    score["Net Projection Margin (L)"] = score["OB Projection Margin (L)"] - score["Exit Projection Margin (L)"]
+    bh_cols = [
+        "BH",
+        "OB MTD", "OB PO (L)", "OB Margin (L)",
+        "Exit MTD", "Exit PO (L)", "Exit Margin (L)",
+        "MTD Net", "Net PO (L)", "Net Margin (L)",
+        "OB Projection", "OB Projection PO (L)", "OB Projection Margin (L)",
+        "Exit Projection", "Exit Projection PO (L)", "Exit Projection Margin (L)",
+        "Net Projection", "Net Projection PO (L)", "Net Projection Margin (L)"
+    ]
+    st.dataframe(
+        score[bh_cols].sort_values(["Net Projection", "Net Projection PO (L)"], ascending=False).style.format({c:"{:,.1f}" for c in bh_cols if c != "BH" and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
+        use_container_width=True, height=440, hide_index=True
+    )
+
+    st.markdown('<div class="section-title">Client Level Net / Projection</div>',unsafe_allow_html=True)
+    client_tbl = client_metrics(data, selected_period, as_of, filters)
+    if client_tbl.empty:
+        st.info("No client records match the selected filters.")
+    else:
+        client_tbl["Net PO (L)"] = client_tbl["OB PO (L)"] - client_tbl["Exit PO (L)"]
+        client_tbl["Net Margin (L)"] = client_tbl["OB Margin (L)"] - client_tbl["Exit Margin (L)"]
+        # Financial projection = actual MTD + remaining pipeline.
+        for i, row in client_tbl.iterrows():
+            local = dict(filters); local["client"] = [row["Client"]]
+            mm = overall_metrics(data, selected_period, as_of, local)
+            client_tbl.loc[i, "OB Projection PO (L)"] = money_lakh(mm["ob_po"] + mm["ob_pipe_po"])
+            client_tbl.loc[i, "OB Projection Margin (L)"] = money_lakh(mm["ob_margin"] + mm["ob_pipe_margin"])
+            client_tbl.loc[i, "Exit Projection PO (L)"] = money_lakh(mm["exit_po"] + mm["exit_pipe_po"])
+            client_tbl.loc[i, "Exit Projection Margin (L)"] = money_lakh(mm["exit_margin"] + mm["exit_pipe_margin"])
+        client_tbl["Net Projection PO (L)"] = client_tbl["OB Projection PO (L)"] - client_tbl["Exit Projection PO (L)"]
+        client_tbl["Net Projection Margin (L)"] = client_tbl["OB Projection Margin (L)"] - client_tbl["Exit Projection Margin (L)"]
+        client_cols = [
+            "Client", "BH", "KAM", "Domain",
+            "OB MTD", "OB PO (L)", "OB Margin (L)",
+            "Exit MTD", "Exit PO (L)", "Exit Margin (L)",
+            "MTD Net", "Net PO (L)", "Net Margin (L)",
+            "OB Projection", "OB Projection PO (L)", "OB Projection Margin (L)",
+            "Exit Projection", "Exit Projection PO (L)", "Exit Projection Margin (L)",
+            "Net Projection", "Net Projection PO (L)", "Net Projection Margin (L)"
+        ]
+        st.dataframe(
+            client_tbl[client_cols].sort_values(["Net Projection", "Net Projection PO (L)"], ascending=False).style.format({c:"{:,.1f}" for c in client_cols if c not in ["Client","BH","KAM","Domain"] and c not in ["OB MTD","Exit MTD","MTD Net","OB Projection","Exit Projection","Net Projection"]}),
+            use_container_width=True, height=480, hide_index=True
+        )
 
 st.caption("CEO Business Performance Cockpit • Demand: Created_at • Submission: date • Interview: Interview_date • Selection: selection_date • Onboarding: display_date • Exit: last_work_day • Pipelines: after DOD through month-end • PO/Margin: ₹ Lakhs")
