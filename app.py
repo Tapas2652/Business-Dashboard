@@ -267,10 +267,26 @@ def client_metrics(data, period, as_of, filters, event="Onboarding"):
         local["client"] = [client]
         m = overall_metrics(data, period, as_of, local)
         ah = active_snapshot(data, as_of, local)
+        # Resolve client attributes from the latest active snapshot first, then fall back to
+        # current onboarding/exit records so the client table always has BH/KAM/Domain.
+        attr_frames=[]
+        for src in ["Active Headcount", "Onboarding", "Exit"]:
+            xx=filter_df(data[src], src, local)
+            cc=SHEET_MAP[src]["client"]
+            if not xx.empty:
+                attr_frames.append(xx[[c for c in ["BH","KAM","Domain"] if c in xx.columns]])
+        attrs=pd.concat(attr_frames, ignore_index=True) if attr_frames else pd.DataFrame()
+        def mode_attr(col):
+            if attrs.empty or col not in attrs.columns:
+                return ""
+            vals=attrs[col].dropna().astype(str)
+            return vals.mode().iat[0] if not vals.empty else ""
+
         rows.append({
             "Client": client,
-            "BH": (ah["BH"].mode().iat[0] if not ah.empty else ""),
-            "KAM": (ah["KAM"].mode().iat[0] if not ah.empty else ""),
+            "BH": mode_attr("BH"),
+            "KAM": mode_attr("KAM"),
+            "Domain": mode_attr("Domain"),
             "Demand": m["demand"], "Submission": m["submission"], "Interview": m["interview"], "Selection": m["selection"],
             "OB MTD": m["ob_hc"], "OB Pipeline": m["ob_pipe_hc"], "OB Projection": m["ob_hc"] + m["ob_pipe_hc"],
             "OB PO (L)": money_lakh(m["ob_po"]), "OB Margin (L)": money_lakh(m["ob_margin"]),
@@ -279,6 +295,11 @@ def client_metrics(data, period, as_of, filters, event="Onboarding"):
             "Exit PO (L)": money_lakh(m["exit_po"]), "Exit Margin (L)": money_lakh(m["exit_margin"]),
             "Exit Margin %": pct(m["exit_margin"], m["exit_po"]),
             "MTD Net": m["ob_hc"] - m["exit_hc"], "Net Projection": m["ob_hc"] + m["ob_pipe_hc"] - m["exit_hc"] - m["exit_pipe_hc"],
+            "OB Projection PO (L)": 0.0, "OB Projection Margin (L)": 0.0,
+            "Exit Projection PO (L)": 0.0, "Exit Projection Margin (L)": 0.0,
+            "Net PO (L)": money_lakh(m["ob_po"]-m["exit_po"]),
+            "Net Margin (L)": money_lakh(m["ob_margin"]-m["exit_margin"]),
+            "Net Projection PO (L)": 0.0, "Net Projection Margin (L)": 0.0,
         })
     return pd.DataFrame(rows)
 
@@ -478,7 +499,12 @@ def render_operational_tab(sheet,date_col,label,value_col=None,color="blue",conv
     with c1:
         mm=monthly_metric(sheet,date_col,value_col); st.plotly_chart(clean_chart(px.bar(mm,x="Month",y="Value",text_auto=True,height=360),f"Month-on-Month {label}"),use_container_width=True)
     with c2:
-        dd=dod_metric(sheet,date_col,value_col); st.plotly_chart(clean_chart(px.line(dd,x="Date",y="Value",markers=True,text="Value",height=360),f"DOD {label} — {selected_label}"),use_container_width=True)
+        dd=dod_metric(sheet,date_col,value_col)
+        fig_dod=px.line(dd,x="Date",y="Value",markers=True,text="Value",height=410)
+        fig_dod.update_traces(textposition="top center", cliponaxis=False, marker=dict(size=7), line=dict(width=3))
+        fig_dod.update_xaxes(tickformat="%d-%b", tickangle=-35, nticks=min(12, max(4, len(dd))))
+        fig_dod.update_yaxes(automargin=True)
+        st.plotly_chart(clean_chart(fig_dod,f"DOD {label} — {selected_label}"),use_container_width=True)
     bd=breakdown_metric(sheet,date_col,value_col); st.plotly_chart(clean_chart(px.bar(bd,x="Value",y=dim,orientation="h",text_auto=True,height=max(360,min(650,120+len(bd)*22))),f"{label} by {dim}"),use_container_width=True)
     return x
 
@@ -506,7 +532,7 @@ for idx in range(0,len(chart_specs),2):
 
 tabs=st.tabs(["Demand","Submission","Interview","Selection","Onboarding","Exit","Net & Projection"])
 with tabs[0]:
-    render_operational_tab("Demand","Created_at","Demand","no_of_opening","blue",lambda:100*m["submission"]/m["demand"] if m["demand"] else 0)
+    render_operational_tab("Demand","Created_at","Demand",None,"blue",lambda:100*m["submission"]/m["demand"] if m["demand"] else 0)
     d=mtd(filter_df(data["Demand"],"Demand",filters),"Created_at",selected_period,as_of)
     detail=d.groupby(["Company_name","BH","KAM","Domain"],dropna=False)["no_of_opening"].sum().reset_index().sort_values("no_of_opening",ascending=False)
     st.dataframe(detail,use_container_width=True,hide_index=True,height=360)
@@ -566,7 +592,11 @@ with tabs[6]:
     # CEO scorecard order: Actual OB/Exit/Net, then Projection OB/Exit/Net.
     score["Net PO (L)"] = score["OB PO (L)"] - score["Exit PO (L)"]
     score["Net Margin (L)"] = score["OB Margin (L)"] - score["Exit Margin (L)"]
-    score["OB Projection PO (L)"] = score["OB PO (L)"] + score["OB Pipeline"] * 0
+    # Initialize every projection financial column before row-wise enrichment.
+    score["OB Projection PO (L)"] = 0.0
+    score["OB Projection Margin (L)"] = 0.0
+    score["Exit Projection PO (L)"] = 0.0
+    score["Exit Projection Margin (L)"] = 0.0
     # Pull pipeline PO/Margin directly so projected financials are MTD + remaining pipeline.
     for i, row in score.iterrows():
         local = dict(filters); local["bh"] = [row["BH"]]
