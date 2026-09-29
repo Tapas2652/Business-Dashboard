@@ -426,7 +426,7 @@ def month_series(data, sheet, date_col, filters, start_period, end_period, value
 # =========================================================
 repo_bytes = get_repo_bytes()
 if repo_bytes is not None:
-    data = load_workbook(source_path=str(REPO_FILE))
+    data = load_workbook(source_bytes=repo_bytes)
 else:
     st.error("CEO_MongoDB.xlsx was not found beside app.py.")
     st.stop()
@@ -504,6 +504,13 @@ with st.expander("🔎 Filters", expanded=True):
     with g2: st.caption("Every chart responds to the selected Month, DOD, BH, KAM, Domain and Client. Change Breakdown By for the comparison dimension.")
 
 filters={"bh":selected_bh,"kam":selected_kam,"domain":selected_domain,"client":selected_client}
+filter_scope = "All" if not any(filters.values()) else " | ".join([
+    f"BH: {', '.join(selected_bh)}" if selected_bh else "",
+    f"KAM: {', '.join(selected_kam)}" if selected_kam else "",
+    f"Domain: {', '.join(selected_domain)}" if selected_domain else "",
+    f"Client: {', '.join(selected_client)}" if selected_client else ""
+]).strip(" | ")
+st.caption(f"Reporting scope: {selected_label} through {as_of.strftime('%d-%b-%Y')} • {filter_scope}")
 
 def selected_dimension(sheet):
     return {"Business Head":"BH","Client":SHEET_MAP[sheet]["client"],"KAM":"KAM","Domain":"Domain"}[analysis_view]
@@ -514,11 +521,16 @@ def clean_chart(fig, title):
     return fig
 
 def monthly_metric(sheet,date_col,value_col=None):
-    x=filter_df(data[sheet],sheet,filters); start=selected_period-8
+    """Return a consistent 9-month series. Historical months are full-month; the selected
+    month is cut off at the selected DOD so its value exactly matches the MTD KPI."""
+    x=filter_df(data[sheet],sheet,filters)
+    start=selected_period-8
     x=x[(x[date_col]>=start.start_time)&(x[date_col]<=selected_period.end_time)]
     rows=[]
     for p in pd.period_range(start,selected_period,freq="M"):
         z=x[x[date_col].dt.to_period("M")==p]
+        if p == selected_period:
+            z = z[z[date_col] <= as_of.normalize()]
         rows.append({"Month":month_label(p),"Value":z[value_col].sum() if value_col else len(z)})
     return pd.DataFrame(rows)
 
@@ -548,7 +560,7 @@ def dod_metric(sheet,date_col,value_col=None):
     return out.rename(columns={date_col:"Date"})
 
 def render_operational_tab(sheet,date_col,label,value_col=None,color="blue",conversion=None):
-    x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of); total=x[value_col].sum() if value_col else len(x); days=max(1,(as_of-selected_period.start_time.normalize()).days+1); dim=selected_dimension(sheet)
+    x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of); total=metric_value(sheet,date_col,value_col); days=max(1,(as_of-selected_period.start_time.normalize()).days+1); dim=selected_dimension(sheet)
     cards=st.columns(4)
     with cards[0]: metric_card(f"MTD {label}",fmt_lakh(total) if value_col else fmt_int(total),"₹ Lakhs" if value_col else "Count",color)
     with cards[1]: metric_card("Avg / Day",f"{total/days:.1f}","MTD run-rate","dark")
@@ -567,10 +579,15 @@ def render_operational_tab(sheet,date_col,label,value_col=None,color="blue",conv
     bd=breakdown_metric(sheet,date_col,value_col); st.plotly_chart(clean_chart(px.bar(bd,x="Value",y=dim,orientation="h",text_auto=True,height=max(360,min(650,120+len(bd)*22))),f"{label} by {dim}"),use_container_width=True)
     return x
 
+def metric_value(sheet, date_col, value_col=None):
+    """Single source of truth for MTD KPI values used across cards, charts and tables."""
+    x = mtd(filter_df(data[sheet], sheet, filters), date_col, selected_period, as_of)
+    return x[value_col].sum() if value_col else len(x)
+
 # =========================================================
 # CEO OVERVIEW
 # =========================================================
-m=overall_metrics(data,selected_period,as_of,filters); ob_proj=m["ob_hc"]+m["ob_pipe_hc"]; ex_proj=m["exit_hc"]+m["exit_pipe_hc"]; net_mtd=m["ob_hc"]-m["exit_hc"]; net_proj=ob_proj-ex_proj
+m=overall_metrics(data,selected_period,as_of,filters); m["demand"]=metric_value("Demand","Created_at"); m["submission"]=metric_value("Submission","date"); m["interview"]=metric_value("Interview","Interview_date"); m["selection"]=metric_value("Selection","selection_date"); ob_proj=m["ob_hc"]+m["ob_pipe_hc"]; ex_proj=m["exit_hc"]+m["exit_pipe_hc"]; net_mtd=m["ob_hc"]-m["exit_hc"]; net_proj=ob_proj-ex_proj
 st.markdown('<div class="section-title">CEO Snapshot</div>',unsafe_allow_html=True)
 r=st.columns(7)
 items=[("Demand",fmt_int(m["demand"]),"MTD","blue"),("Submission",fmt_int(m["submission"]),"MTD","blue"),("Interview",fmt_int(m["interview"]),"MTD","blue"),("Selection",fmt_int(m["selection"]),"MTD","blue"),("Onboarding",fmt_int(m["ob_hc"]),f"PO {fmt_lakh(m['ob_po'])}","green"),("Exit",fmt_int(m["exit_hc"]),f"PO {fmt_lakh(m['exit_po'])}","red"),("Net",fmt_int(net_mtd),"OB − Exit","dark")]
