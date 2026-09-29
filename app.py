@@ -114,8 +114,13 @@ def get_repo_bytes():
     return REPO_FILE.read_bytes() if REPO_FILE.exists() else None
 
 
-def month_label(period):
-    return pd.Timestamp(period.start_time).strftime("%b'%y")
+def month_label(value):
+    """Return a consistent Month label for either a pandas Period or Timestamp/date."""
+    if isinstance(value, pd.Period):
+        ts = value.start_time
+    else:
+        ts = pd.Timestamp(value)
+    return ts.strftime("%b'%y")
 
 
 def period_from_label(label):
@@ -379,8 +384,15 @@ for s, cfg in SHEET_MAP.items():
     periods.update(d.dt.to_period("M").tolist())
 periods = sorted(periods)
 period_labels = [month_label(p) for p in periods]
-latest_available = max([data[s][SHEET_MAP[s]["date"]].dropna().max() for s in SHEET_MAP])
-default_idx = max(0, period_labels.index(month_label(latest_available)) if month_label(latest_available) in period_labels else len(period_labels)-1)
+if not period_labels:
+    st.error("No valid reporting dates were found in the workbook.")
+    st.stop()
+
+latest_dates = [data[s][SHEET_MAP[s]["date"]].dropna().max() for s in SHEET_MAP]
+latest_dates = [d for d in latest_dates if pd.notna(d)]
+latest_available = max(latest_dates) if latest_dates else periods[-1].start_time
+latest_label = month_label(latest_available)
+default_idx = period_labels.index(latest_label) if latest_label in period_labels else len(period_labels) - 1
 
 with st.sidebar:
     selected_label = st.selectbox("Reporting Month", period_labels, index=default_idx)
