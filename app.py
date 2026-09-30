@@ -483,7 +483,7 @@ st.markdown("""<div class="hero"><h1>CEO BUSINESS PERFORMANCE COCKPIT</h1><p>Exe
 # =========================================================
 with st.sidebar:
     st.markdown("## 🔎 Dashboard Filters")
-    theme = st.selectbox("Theme", ["Executive Light", "Slate Blue", "Clean White"], index=0)
+    theme = st.selectbox("Theme", ["Midnight Dark", "Executive Light", "Slate Blue"], index=1)
     st.markdown("---")
     selected_label = st.selectbox("Reporting Month", period_labels, index=default_idx)
     selected_period = period_from_label(selected_label)
@@ -510,23 +510,44 @@ filter_scope = "All" if not any(filters.values()) else " | ".join([
 
 # Theme overrides. The dashboard defaults to a light executive style, with two alternatives.
 themes = {
-    "Executive Light": {"bg":"#eef3f8","sidebar":"#f7f9fc","hero1":"#0b315b","hero2":"#154f7d","accent":"#2877b7","text":"#19324d","card":"#ffffff"},
-    "Slate Blue": {"bg":"#e9eef5","sidebar":"#dfe7f1","hero1":"#172b4d","hero2":"#365f8c","accent":"#4f78a4","text":"#20344e","card":"#ffffff"},
-    "Clean White": {"bg":"#f8fafc","sidebar":"#ffffff","hero1":"#244a68","hero2":"#3b6d91","accent":"#2d6f9f","text":"#24384b","card":"#ffffff"},
+    "Midnight Dark": {
+        "bg":"#07111f", "sidebar":"#0b1728", "hero1":"#071a33", "hero2":"#123d63",
+        "accent":"#5aa7e8", "text":"#e7eef7", "muted":"#9fb1c5", "card":"#0f2035",
+        "panel":"#0d1c2e", "grid":"#294158", "plot":"#0d1c2e", "paper":"#0d1c2e",
+        "border":"#29445f", "input":"#13263d"
+    },
+    "Executive Light": {
+        "bg":"#eef3f8", "sidebar":"#f7f9fc", "hero1":"#0b315b", "hero2":"#154f7d",
+        "accent":"#2877b7", "text":"#19324d", "muted":"#77889a", "card":"#ffffff",
+        "panel":"#ffffff", "grid":"#e7edf3", "plot":"#ffffff", "paper":"#ffffff",
+        "border":"#dbe4ec", "input":"#ffffff"
+    },
+    "Slate Blue": {
+        "bg":"#dfe7f1", "sidebar":"#cfdbe8", "hero1":"#172b4d", "hero2":"#365f8c",
+        "accent":"#4f78a4", "text":"#20344e", "muted":"#60758c", "card":"#f7f9fc",
+        "panel":"#f7f9fc", "grid":"#d2dce7", "plot":"#f7f9fc", "paper":"#f7f9fc",
+        "border":"#c5d2df", "input":"#f8fafc"
+    },
 }
 t=themes[theme]
 st.markdown(f"""<style>
 .stApp {{ background:{t['bg']} !important; }}
 .block-container {{ max-width:1800px; padding:1.2rem 2rem 2.5rem; }}
 [data-testid="stHeader"] {{ background:{t['bg']} !important; }}
-[data-testid="stSidebar"] {{ background:{t['sidebar']} !important; }}
+[data-testid="stSidebar"] {{ background:{t['sidebar']} !important; border-right:1px solid {t['border']}; }}
 [data-testid="stSidebar"] * {{ color:{t['text']} !important; }}
-.hero {{ background:linear-gradient(135deg,{t['hero1']},{t['hero2']}) !important; }}
-.metric {{ background:{t['card']} !important; }}
+[data-testid="stSidebar"] [data-baseweb="select"] > div, [data-testid="stSidebar"] input {{ background:{t['input']} !important; border-color:{t['border']} !important; }}
+.hero {{ background:linear-gradient(135deg,{t['hero1']},{t['hero2']}) !important; box-shadow:0 8px 24px rgba(0,0,0,.14); }}
+.metric {{ background:{t['card']} !important; border-color:{t['border']} !important; box-shadow:0 5px 16px rgba(0,0,0,.10); }}
+.metric .label {{ color:{t['muted']} !important; }}
+.metric .value {{ color:{t['text']} !important; }}
+.metric .sub {{ color:{t['muted']} !important; }}
 .metric.blue {{ border-top-color:{t['accent']} !important; }}
 .section-title {{ color:{t['text']} !important; }}
+.chart-card {{ background:{t['panel']} !important; border:1px solid {t['border']} !important; box-shadow:0 5px 16px rgba(0,0,0,.08); }}
 div[data-testid="stTabs"] button {{ color:{t['text']} !important; }}
 div[data-testid="stTabs"] button[aria-selected="true"] {{ color:{t['accent']} !important; }}
+.stCaption, [data-testid="stCaptionContainer"] {{ color:{t['muted']} !important; }}
 </style>""", unsafe_allow_html=True)
 st.caption(f"Reporting scope: full {selected_label} • {filter_scope} • Click View MTD or a month bar to drill down")
 
@@ -535,8 +556,12 @@ def selected_dimension(sheet):
     return {"Business Head":"BH","Client":SHEET_MAP[sheet]["client"],"KAM":"KAM","Domain":"Domain"}[analysis_view]
 
 def clean_chart(fig, title):
-    fig.update_layout(title=dict(text=title,x=.02,font=dict(size=15,color="#263b50")),paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",font=dict(color="#53677b"),margin=dict(l=15,r=15,t=48,b=45),hovermode="x unified")
-    fig.update_xaxes(showgrid=False); fig.update_yaxes(gridcolor="#e7edf3")
+    fig.update_layout(
+        title=dict(text=title,x=.02,font=dict(size=15,color=t["text"])),
+        paper_bgcolor=t["paper"], plot_bgcolor=t["plot"], font=dict(color=t["muted"]),
+        margin=dict(l=15,r=15,t=48,b=45), hovermode="x unified"
+    )
+    fig.update_xaxes(showgrid=False, color=t["muted"]); fig.update_yaxes(gridcolor=t["grid"], color=t["muted"])
     return fig
 
 def monthly_metric(sheet,date_col,value_col=None):
