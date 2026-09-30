@@ -117,7 +117,10 @@ def load_workbook(source_bytes=None, source_path=None):
             if c in df.columns:
                 df[c] = df[c].fillna("Unmapped").astype(str).str.strip().replace({"": "Unmapped"})
         if "BH" in df.columns:
-            df["BH"] = df["BH"].replace({"TBA - I": "TBA", "TBA-1": "TBA", "TBA - 1": "TBA", "TBA–1": "TBA"})
+            df["BH"] = (df["BH"].astype(str).str.strip()
+                        .replace({"TBA - I": "TBA", "TBA-I": "TBA", "TBA-1": "TBA", "TBA - 1": "TBA", "TBA–1": "TBA", "TBA -I": "TBA"}))
+        if "Domain" in df.columns:
+            df["Domain"] = df["Domain"].astype(str).str.strip().replace({"CAPTIVE":"Captive","CAPTIVE ":"Captive","SERVICES":"Services","ITES ":"ITES","ULITES ":"ULITES","MS":"MS","M.S":"MS"})
         for c in ["no_of_opening", "po", "margin", "p_o_value"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
@@ -192,6 +195,8 @@ def filter_df(df, sheet, filters):
     cfg=SHEET_MAP[sheet]
     x=df.copy()
     if "BH" in x.columns:
+        x["BH"] = (x["BH"].astype(str).str.strip()
+                   .replace({"TBA - I":"TBA","TBA-I":"TBA","TBA-1":"TBA","TBA - 1":"TBA","TBA–1":"TBA","TBA -I":"TBA"}))
         x=x[x["BH"].isin(ALLOWED_BHS)]
     if "Domain" in x.columns:
         x=x[x["Domain"].isin(ALLOWED_DOMAINS)]
@@ -434,25 +439,17 @@ else:
     st.error("CEO_MongoDB.xlsx was not found beside app.py.")
     st.stop()
 
-periods = set()
-for sheet, cfg in SHEET_MAP.items():
-    d = data[sheet][cfg["date"]].dropna()
-    if not d.empty:
-        periods.update(d.dt.to_period("M").tolist())
-periods = sorted(periods)
+# Reporting month selector is intentionally fixed to Jan-Dec 2026.
+periods = list(pd.period_range("2026-01", "2026-12", freq="M"))
 period_labels = [month_label(p) for p in periods]
-if not periods:
-    st.error("No valid reporting dates were found in the workbook.")
-    st.stop()
-
 latest_dates = []
 for sheet, cfg in SHEET_MAP.items():
     d = data[sheet][cfg["date"]].dropna()
     if not d.empty:
         latest_dates.append(d.max())
-latest_available = max(latest_dates) if latest_dates else periods[-1].start_time
-latest_label = month_label(latest_available)
-default_idx = period_labels.index(latest_label) if latest_label in period_labels else len(period_labels) - 1
+latest_available = max(latest_dates) if latest_dates else pd.Timestamp("2026-01-01")
+latest_period = pd.Timestamp(latest_available).to_period("M")
+default_idx = next((i for i,p in enumerate(periods) if p == latest_period), 0)
 
 # =========================================================
 # CLEAN EXECUTIVE THEME
@@ -471,6 +468,8 @@ st.markdown("""
 .metric .value { color:#173b60; font-size:1.75rem; font-weight:850; line-height:1.15; margin-top:5px; }
 .metric .sub { color:#77889a; font-size:.72rem; margin-top:5px; }
 .metric.green { border-top:4px solid #2d8a55; }.metric.red{border-top:4px solid #d55a5a}.metric.blue{border-top:4px solid #2877b7}.metric.gold{border-top:4px solid #d79a35}.metric.dark{border-top:4px solid #496a86}
+.metric-row-gap { margin-bottom: 6px; }
+button[kind=secondary] { border-radius: 8px !important; font-size: .75rem !important; }
 div[data-testid="stTabs"] button { color:#3c5268; font-weight:750; }
 div[data-testid="stTabs"] button[aria-selected="true"] { color:#0c4c78; }
 .stDataFrame { border-radius:10px; overflow:hidden; }
@@ -479,25 +478,27 @@ div[data-testid="stTabs"] button[aria-selected="true"] { color:#0c4c78; }
 
 st.markdown("""<div class="hero"><h1>CEO BUSINESS PERFORMANCE COCKPIT</h1><p>Executive view &nbsp;•&nbsp; PO / Margin shown in ₹ Lakhs</p></div>""", unsafe_allow_html=True)
 
-with st.expander("🔎 Filters", expanded=True):
-    f1,f2,f3,f4,f5,f6 = st.columns([1.1,1.1,1.1,1.1,1.4,1.4])
-    with f1:
-        selected_label = st.selectbox("Reporting Month", period_labels, index=default_idx)
+# =========================================================
+# GLOBAL SIDEBAR FILTERS
+# =========================================================
+with st.sidebar:
+    st.markdown("## 🔎 Dashboard Filters")
+    theme = st.selectbox("Theme", ["Executive Light", "Slate Blue", "Clean White"], index=0)
+    st.markdown("---")
+    selected_label = st.selectbox("Reporting Month", period_labels, index=default_idx)
     selected_period = period_from_label(selected_label)
-    # DOD/as-of is intentionally removed. Every selected-month KPI uses the full month.
     as_of = selected_period.end_time.normalize()
-    with f2:
-        st.markdown("**Reporting Basis**")
-        st.caption("Full selected month")
-    bh_values=universe_values(data,"BH"); kam_values=universe_values(data,"KAM"); domain_values=universe_values(data,"Domain")
+    bh_values=universe_values(data,"BH")
+    kam_values=universe_values(data,"KAM")
+    domain_values=universe_values(data,"Domain")
     client_values=sorted(set(universe_values(data,"company_name")+universe_values(data,"Company_name")+universe_values(data,"client")))
-    with f3: selected_bh=st.multiselect("Business Head",bh_values,placeholder="All BHs")
-    with f4: selected_kam=st.multiselect("KAM",kam_values,placeholder="All KAMs")
-    with f5: selected_domain=st.multiselect("Domain",domain_values,placeholder="All Domains")
-    with f6: selected_client=st.multiselect("Client",client_values,placeholder="All Clients")
-    g1,g2=st.columns([1,3])
-    with g1: analysis_view=st.selectbox("Breakdown By",["Business Head","Client","KAM","Domain"])
-    with g2: st.caption("Every chart responds to the selected Month, BH, KAM, Domain and Client. No DOD cutoff is applied.")
+    selected_bh=st.multiselect("Business Head",bh_values,placeholder="All BHs")
+    selected_kam=st.multiselect("KAM",kam_values,placeholder="All KAMs")
+    selected_domain=st.multiselect("Domain",domain_values,placeholder="All Domains")
+    selected_client=st.multiselect("Client",client_values,placeholder="All Clients")
+    analysis_view=st.selectbox("Breakdown By",["Business Head","Client","KAM","Domain"])
+    st.markdown("---")
+    st.caption("Full selected month. No DOD cutoff is used.")
 
 filters={"bh":selected_bh,"kam":selected_kam,"domain":selected_domain,"client":selected_client}
 filter_scope = "All" if not any(filters.values()) else " | ".join([
@@ -506,7 +507,29 @@ filter_scope = "All" if not any(filters.values()) else " | ".join([
     f"Domain: {', '.join(selected_domain)}" if selected_domain else "",
     f"Client: {', '.join(selected_client)}" if selected_client else ""
 ]).strip(" | ")
-st.caption(f"Reporting scope: full {selected_label} • {filter_scope}")
+
+# Theme overrides. The dashboard defaults to a light executive style, with two alternatives.
+themes = {
+    "Executive Light": {"bg":"#eef3f8","sidebar":"#f7f9fc","hero1":"#0b315b","hero2":"#154f7d","accent":"#2877b7","text":"#19324d","card":"#ffffff"},
+    "Slate Blue": {"bg":"#e9eef5","sidebar":"#dfe7f1","hero1":"#172b4d","hero2":"#365f8c","accent":"#4f78a4","text":"#20344e","card":"#ffffff"},
+    "Clean White": {"bg":"#f8fafc","sidebar":"#ffffff","hero1":"#244a68","hero2":"#3b6d91","accent":"#2d6f9f","text":"#24384b","card":"#ffffff"},
+}
+t=themes[theme]
+st.markdown(f"""<style>
+.stApp {{ background:{t['bg']} !important; }}
+.block-container {{ max-width:1800px; padding:1.2rem 2rem 2.5rem; }}
+[data-testid="stHeader"] {{ background:{t['bg']} !important; }}
+[data-testid="stSidebar"] {{ background:{t['sidebar']} !important; }}
+[data-testid="stSidebar"] * {{ color:{t['text']} !important; }}
+.hero {{ background:linear-gradient(135deg,{t['hero1']},{t['hero2']}) !important; }}
+.metric {{ background:{t['card']} !important; }}
+.metric.blue {{ border-top-color:{t['accent']} !important; }}
+.section-title {{ color:{t['text']} !important; }}
+div[data-testid="stTabs"] button {{ color:{t['text']} !important; }}
+div[data-testid="stTabs"] button[aria-selected="true"] {{ color:{t['accent']} !important; }}
+</style>""", unsafe_allow_html=True)
+st.caption(f"Reporting scope: full {selected_label} • {filter_scope} • Click View MTD or a month bar to drill down")
+
 
 def selected_dimension(sheet):
     return {"Business Head":"BH","Client":SHEET_MAP[sheet]["client"],"KAM":"KAM","Domain":"Domain"}[analysis_view]
@@ -555,7 +578,7 @@ def dod_metric(sheet,date_col,value_col=None):
 
 def render_operational_tab(sheet,date_col,label,value_col=None,color="blue",conversion=None):
     x=mtd(filter_df(data[sheet],sheet,filters),date_col,selected_period,as_of); total=metric_value(sheet,date_col,value_col); days=max(1,(selected_period.end_time.normalize()-selected_period.start_time.normalize()).days+1); dim=selected_dimension(sheet)
-    cards=st.columns(4)
+    cards=st.columns(4, gap="medium")
     with cards[0]: metric_card(f"MTD {label}",fmt_lakh(total) if value_col else fmt_int(total),"₹ Lakhs" if value_col else "Count",color)
     with cards[1]: metric_card("Avg / Day",f"{total/days:.1f}","MTD run-rate","dark")
     with cards[2]: metric_card(f"{dim} Count",fmt_int(x[dim].nunique()) if not x.empty else "0",f"Distinct {dim}","gold")
@@ -573,6 +596,107 @@ def render_operational_tab(sheet,date_col,label,value_col=None,color="blue",conv
     bd=breakdown_metric(sheet,date_col,value_col); st.plotly_chart(clean_chart(px.bar(bd,x="Value",y=dim,orientation="h",text_auto=True,height=max(360,min(650,120+len(bd)*22))),f"{label} by {dim}"),use_container_width=True)
     return x
 
+def mtd_detail_table(metric):
+    """Return the requested MTD drilldown. Demand/Submission/Interview are summarized;
+    Selection/Onboarding/Exit are candidate-level."""
+    maps = {
+        "Demand": ("Demand", "Created_at"),
+        "Submission": ("Submission", "date"),
+        "Interview": ("Interview", "Interview_date"),
+        "Selection": ("Selection", "selection_date"),
+        "Onboarding": ("Onboarding", "display_date"),
+        "Exit": ("Exit", "last_work_day"),
+    }
+    if metric not in maps:
+        return pd.DataFrame()
+    sheet, dc = maps[metric]
+    x = mtd(filter_df(data[sheet], sheet, filters), dc, selected_period, as_of)
+    if x.empty:
+        return pd.DataFrame()
+    client = SHEET_MAP[sheet]["client"]
+    if metric == "Demand":
+        out = x.groupby(["BH", client, "KAM", "Domain"], dropna=False)["no_of_opening"].sum().reset_index(name="Demand")
+        return ordered_sort(out, "Demand", ["Domain", "BH"])
+    if metric == "Submission":
+        out = x.groupby(["BH", client, "KAM", "Domain"], dropna=False).size().reset_index(name="Submissions")
+        return ordered_sort(out, "Submissions", ["Domain", "BH"])
+    if metric == "Interview":
+        out = x.groupby(["BH", client, "KAM", "Domain"], dropna=False).size().reset_index(name="Interviews")
+        return ordered_sort(out, "Interviews", ["Domain", "BH"])
+    if metric == "Selection":
+        name_col = "candidate" if "candidate" in x.columns else "email"
+        cols = [name_col, client, "BH", "KAM", "Domain", "joining_date"]
+        out = x[cols].copy().rename(columns={name_col: "Candidate", client: "Client", "joining_date": "Joining Date"})
+        out["Joining Date"] = pd.to_datetime(out["Joining Date"], errors="coerce").dt.strftime("%d-%b-%Y")
+        return ordered_sort(out, "Client", ["Domain", "BH"])
+    if metric == "Onboarding":
+        name_col = "full_name" if "full_name" in x.columns else "employee_id"
+        cols = [name_col, client, "BH", "KAM", "Domain", "display_date", "p_o_value", "margin"]
+        out = x[cols].copy().rename(columns={name_col: "Candidate", client: "Client", "display_date": "Joining Date", "p_o_value": "PO", "margin": "Margin"})
+        out["Joining Date"] = pd.to_datetime(out["Joining Date"], errors="coerce").dt.strftime("%d-%b-%Y")
+        out["PO (L)"] = out.pop("PO") / 100000
+        out["Margin (L)"] = out.pop("Margin") / 100000
+        return ordered_sort(out, "Client", ["Domain", "BH"])
+    name_col = "full_name" if "full_name" in x.columns else "employee_id"
+    cols = [name_col, client, "BH", "KAM", "Domain", "last_work_day", "p_o_value", "margin"]
+    out = x[cols].copy().rename(columns={name_col: "Candidate", client: "Client", "last_work_day": "Exit Date", "p_o_value": "PO", "margin": "Margin"})
+    out["Exit Date"] = pd.to_datetime(out["Exit Date"], errors="coerce").dt.strftime("%d-%b-%Y")
+    out["PO (L)"] = out.pop("PO") / 100000
+    out["Margin (L)"] = out.pop("Margin") / 100000
+    return ordered_sort(out, "Client", ["Domain", "BH"])
+
+
+def candidate_month_detail(metric, p):
+    """Candidate drilldown for a month selected from a chart."""
+    specs = {
+        "Selection": ("Selection", "selection_date", "joining_date", "candidate"),
+        "Onboarding": ("Onboarding", "display_date", "display_date", "full_name"),
+        "OB Pipeline": ("Onboarding Pipeline", "display_date", "joining_date", "full_name"),
+        "Exit": ("Exit", "last_work_day", "last_work_day", "full_name"),
+        "Exit Projection": ("Exit Pipeline", "tentative_exit_date", "tentative_exit_date", "full_name"),
+    }
+    sheet, dc, detail_date, name_col = specs[metric]
+    x = filter_df(data[sheet], sheet, filters)
+    x = x[x[dc].dt.to_period("M") == p].copy()
+    if x.empty:
+        return pd.DataFrame()
+    client = SHEET_MAP[sheet]["client"]
+    cols = [name_col, client, "BH", "KAM", "Domain", detail_date]
+    for c in ["p_o_value", "margin"]:
+        if c in x.columns:
+            cols.append(c)
+    out = x[cols].copy().rename(columns={name_col: "Candidate", client: "Client", detail_date: "Date"})
+    out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.strftime("%d-%b-%Y")
+    if "p_o_value" in out.columns:
+        out["PO (L)"] = out.pop("p_o_value") / 100000
+    if "margin" in out.columns:
+        out["Margin (L)"] = out.pop("margin") / 100000
+    return out.sort_values(["Domain", "BH", "Client", "Candidate"], kind="stable")
+
+
+def plot_with_month_drill(fig, key, metric, data_frame):
+    """Render a Plotly chart and expose a candidate table when a month/bar is clicked."""
+    event = st.plotly_chart(fig, use_container_width=True, key=key, on_select="rerun", selection_mode="points")
+    points = []
+    try:
+        points = event.selection.points if event and hasattr(event, "selection") else []
+    except Exception:
+        points = []
+    if points:
+        xval = points[0].get("x")
+        try:
+            p = period_from_label(str(xval))
+        except Exception:
+            p = pd.Period(str(xval), freq="M") if xval else selected_period
+        detail = candidate_month_detail(metric, p)
+        if not detail.empty:
+            st.markdown(f"**{metric} detail — {month_label(p)}**")
+            fmt = {c: "{:,.1f}" for c in ["PO (L)", "Margin (L)"] if c in detail.columns}
+            st.dataframe(detail.style.format(fmt), use_container_width=True, hide_index=True, height=330)
+        else:
+            st.info(f"No {metric} candidate records found for {month_label(p)}.")
+
+
 def metric_value(sheet, date_col, value_col=None):
     """Single source of truth for MTD KPI values used across cards, charts and tables."""
     x = mtd(filter_df(data[sheet], sheet, filters), date_col, selected_period, as_of)
@@ -583,32 +707,47 @@ def metric_value(sheet, date_col, value_col=None):
 # =========================================================
 m=overall_metrics(data,selected_period,as_of,filters); m["demand"]=metric_value("Demand","Created_at"); m["submission"]=metric_value("Submission","date"); m["interview"]=metric_value("Interview","Interview_date"); m["selection"]=metric_value("Selection","selection_date"); ob_proj=m["ob_hc"]+m["ob_pipe_hc"]; ex_proj=m["exit_hc"]+m["exit_pipe_hc"]; net_mtd=m["ob_hc"]-m["exit_hc"]; net_proj=ob_proj-ex_proj
 st.markdown('<div class="section-title">CEO Snapshot</div>',unsafe_allow_html=True)
-r=st.columns(7)
+# KPI cards are intentionally separated with medium gaps. Each "View MTD" control opens a focused drilldown.
+r=st.columns(7, gap="medium")
 items=[("Demand",fmt_int(m["demand"]),"MTD","blue"),("Submission",fmt_int(m["submission"]),"MTD","blue"),("Interview",fmt_int(m["interview"]),"MTD","blue"),("Selection",fmt_int(m["selection"]),"MTD","blue"),("Onboarding",fmt_int(m["ob_hc"]),f"PO {fmt_lakh(m['ob_po'])} | Margin {fmt_lakh(m['ob_margin'])}","green"),("Exit",fmt_int(m["exit_hc"]),f"PO {fmt_lakh(m['exit_po'])} | Margin {fmt_lakh(m['exit_margin'])}","red"),("Net",fmt_int(net_mtd),f"PO {fmt_lakh(m['ob_po']-m['exit_po'])} | Margin {fmt_lakh(m['ob_margin']-m['exit_margin'])}","dark")]
 for col,(lab,val,sub,kind) in zip(r,items):
-    with col: metric_card(lab,val,sub,kind)
+    with col:
+        metric_card(lab,val,sub,kind)
+        if st.button(f"View {lab} MTD", key=f"view_{lab.lower()}", use_container_width=True):
+            st.session_state["active_drill"] = lab
+active_drill=st.session_state.get("active_drill")
+if active_drill in ["Demand","Submission","Interview","Selection","Onboarding","Exit"]:
+    detail=mtd_detail_table(active_drill)
+    st.markdown(f'<div class="section-title">{active_drill} — MTD Detail</div>',unsafe_allow_html=True)
+    if detail.empty:
+        st.info("No records match the current filters.")
+    else:
+        fmt={c:"{:,.1f}" for c in ["PO (L)","Margin (L)"] if c in detail.columns}
+        st.dataframe(detail.style.format(fmt),use_container_width=True,hide_index=True,height=340)
+elif active_drill == "Net":
+    st.markdown('<div class="section-title">Net — MTD BH / Client Summary</div>',unsafe_allow_html=True)
+    net=client_metrics(data,selected_period,as_of,filters)
+    if not net.empty:
+        net["Net PO (L)"]=net["OB PO (L)"]-net["Exit PO (L)"]
+        net["Net Margin (L)"]=net["OB Margin (L)"]-net["Exit Margin (L)"]
+        st.dataframe(ordered_sort(net[["BH","Client","KAM","Domain","MTD Net","Net PO (L)","Net Margin (L)"]],"MTD Net",["Domain","BH"]).style.format({"Net PO (L)":"{:,.1f}","Net Margin (L)":"{:,.1f}"}),use_container_width=True,hide_index=True,height=340)
+
 ob_proj_po=m["ob_po"]+m["ob_pipe_po"]; ob_proj_margin=m["ob_margin"]+m["ob_pipe_margin"]
 ex_proj_po=m["exit_po"]+m["exit_pipe_po"]; ex_proj_margin=m["exit_margin"]+m["exit_pipe_margin"]
 net_proj_po=ob_proj_po-ex_proj_po; net_proj_margin=ob_proj_margin-ex_proj_margin
-r2=st.columns(3)
-projection_cards=[
-    ("OB PROJECTION",ob_proj,ob_proj_po,ob_proj_margin,"green"),
-    ("EXIT PROJECTION",ex_proj,ex_proj_po,ex_proj_margin,"red"),
-    ("NET PROJECTION",net_proj,net_proj_po,net_proj_margin,"dark"),
-]
+r2=st.columns(3, gap="medium")
+projection_cards=[("OB PROJECTION",ob_proj,ob_proj_po,ob_proj_margin,"green"),("EXIT PROJECTION",ex_proj,ex_proj_po,ex_proj_margin,"red"),("NET PROJECTION",net_proj,net_proj_po,net_proj_margin,"dark")]
 for col,(lab,hc,po_v,mar_v,kind) in zip(r2,projection_cards):
     with col:
-        html=f'<div class="metric {kind}"><div class="label">{lab}</div><div class="value">{fmt_int(hc)} HC</div><div class="sub">PO {fmt_lakh(po_v)} &nbsp; | &nbsp; Margin {fmt_lakh(mar_v)}</div></div>'
-        st.markdown(html,unsafe_allow_html=True)
+        metric_card(lab,f"{fmt_int(hc)} HC",f"PO {fmt_lakh(po_v)} | Margin {fmt_lakh(mar_v)}",kind)
 
 st.markdown('<div class="section-title">CEO Trend Board — separate metric charts</div>',unsafe_allow_html=True)
-chart_specs=[("Demand","Demand","Created_at",None),("Submission","Submission","date",None),("Interview","Interview","Interview_date",None),("Selection","Selection","selection_date",None),("Onboarding","Onboarding","display_date",None),("Exit","Exit","last_work_day",None)]
+chart_specs=[("Demand","Demand","Created_at",None),("Submission","Submission","date",None),("Interview","Interview","Interview_date",None),("Selection","Selection","selection_date",None)]
 for idx in range(0,len(chart_specs),2):
-    cols=st.columns(2)
+    cols=st.columns(2, gap="medium")
     for col,spec in zip(cols,chart_specs[idx:idx+2]):
         label,sheet,dc,vc=spec; mm=monthly_metric(sheet,dc,vc)
         with col: st.plotly_chart(clean_chart(px.bar(mm,x="Month",y="Value",text_auto=True,height=330),f"{label} — Month-on-Month"),use_container_width=True)
-
 tabs=st.tabs(["Demand","Submission","Interview","Selection","Onboarding","Exit","Net & Projection"])
 with tabs[0]:
     render_operational_tab("Demand","Created_at","Demand",None,"blue",lambda:100*m["submission"]/m["demand"] if m["demand"] else 0)
@@ -622,13 +761,27 @@ with tabs[2]:
     render_operational_tab("Interview","Interview_date","Interview",None,"blue",lambda:100*m["interview"]/m["submission"] if m["submission"] else 0)
 with tabs[3]:
     render_operational_tab("Selection","selection_date","Selection",None,"blue",lambda:100*m["selection"]/m["interview"] if m["interview"] else 0)
+    sel_mm=monthly_metric("Selection","selection_date",None)
+    sel_fig=clean_chart(px.bar(sel_mm,x="Month",y="Value",text_auto=True,height=360),"Selection — click a month for candidate detail")
+    plot_with_month_drill(sel_fig,"selection_drill_chart","Selection",sel_mm)
 with tabs[4]:
     ob=mtd(filter_df(data["Onboarding"],"Onboarding",filters),"display_date",selected_period,as_of); obp=pipeline(filter_df(data["Onboarding Pipeline"],"Onboarding Pipeline",filters),"display_date",selected_period,as_of); po=ob["p_o_value"].sum(); mar=ob["margin"].sum()
     ob_proj_po_tab=ob["p_o_value"].sum()+obp["p_o_value"].sum(); ob_proj_margin_tab=ob["margin"].sum()+obp["margin"].sum()
-    c=st.columns(7); vals=[("MTD OB HC",fmt_int(len(ob)),"Actual","green"),("MTD OB PO",fmt_lakh(po),"₹ Lakhs","green"),("MTD OB Margin",fmt_lakh(mar),"₹ Lakhs","green"),("Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold"),("OB Pipeline",fmt_int(len(obp)),f"PO {fmt_lakh(obp['p_o_value'].sum())} | Margin {fmt_lakh(obp['margin'].sum())}","dark"),("OB Projection",fmt_int(len(ob)+len(obp)),f"PO {fmt_lakh(ob_proj_po_tab)} | Margin {fmt_lakh(ob_proj_margin_tab)}","green"),("Projected Margin %",f"{pct(ob_proj_margin_tab,ob_proj_po_tab):.1f}%","Projection","gold")]
+    c=st.columns(7, gap="medium"); vals=[("MTD OB HC",fmt_int(len(ob)),"Actual","green"),("MTD OB PO",fmt_lakh(po),"₹ Lakhs","green"),("MTD OB Margin",fmt_lakh(mar),"₹ Lakhs","green"),("Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold"),("OB Pipeline",fmt_int(len(obp)),f"PO {fmt_lakh(obp['p_o_value'].sum())} | Margin {fmt_lakh(obp['margin'].sum())}","dark"),("OB Projection",fmt_int(len(ob)+len(obp)),f"PO {fmt_lakh(ob_proj_po_tab)} | Margin {fmt_lakh(ob_proj_margin_tab)}","green"),("Projected Margin %",f"{pct(ob_proj_margin_tab,ob_proj_po_tab):.1f}%","Projection","gold")]
     for col,(lab,val,sub,kind) in zip(c,vals):
         with col: metric_card(lab,val,sub,kind)
-    mm=monthly_metric("Onboarding","display_date",None); st.plotly_chart(clean_chart(px.bar(mm,x="Month",y="Value",text_auto=True,height=380),"Onboarding — Month-on-Month HC"),use_container_width=True)
+    metric_choice=st.selectbox("Onboarding chart metric",["HC","PO","Margin"],key="ob_chart_metric")
+    vc={"HC":None,"PO":"p_o_value","Margin":"margin"}[metric_choice]
+    mm=monthly_metric("Onboarding","display_date",vc).copy()
+    if vc: mm["Value"]=mm["Value"]/100000
+    fig_ob=clean_chart(px.bar(mm,x="Month",y="Value",text_auto=(".1f" if vc else True),height=380),f"Onboarding — Month-on-Month {metric_choice}{' (₹ Lakhs)' if vc else ''}")
+    if metric_choice=="HC": plot_with_month_drill(fig_ob,"ob_mom_chart","Onboarding",mm)
+    else: st.plotly_chart(fig_ob,use_container_width=True)
+    pipe_month=st.selectbox("OB Pipeline detail month",[month_label(p) for p in pd.period_range(selected_period-8,selected_period,freq="M")],index=8,key="ob_pipe_month")
+    pipe_detail=candidate_month_detail("OB Pipeline",period_from_label(pipe_month))
+    if not pipe_detail.empty:
+        st.markdown(f"**OB Pipeline candidates — {pipe_month}**")
+        st.dataframe(pipe_detail.style.format({c:"{:,.1f}" for c in ["PO (L)","Margin (L)"] if c in pipe_detail.columns}),use_container_width=True,hide_index=True,height=280)
     c1,c2=st.columns(2)
     with c1:
         dd=dod_metric("Onboarding","display_date"); st.plotly_chart(clean_chart(px.line(dd,x="Date",y="Value",markers=True,text="Value",height=350),"Onboarding — DOD Trend"),use_container_width=True)
@@ -643,10 +796,21 @@ with tabs[4]:
 with tabs[5]:
     ex=mtd(filter_df(data["Exit"],"Exit",filters),"last_work_day",selected_period,as_of); exp=pipeline(filter_df(data["Exit Pipeline"],"Exit Pipeline",filters),"tentative_exit_date",selected_period,as_of); po=ex["p_o_value"].sum(); mar=ex["margin"].sum()
     ex_proj_po_tab=ex["p_o_value"].sum()+exp["p_o_value"].sum(); ex_proj_margin_tab=ex["margin"].sum()+exp["margin"].sum()
-    c=st.columns(7); vals=[("MTD Exit HC",fmt_int(len(ex)),"Actual","red"),("MTD Exit PO",fmt_lakh(po),"₹ Lakhs","red"),("MTD Exit Margin",fmt_lakh(mar),"₹ Lakhs","red"),("Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold"),("Exit Pipeline",fmt_int(len(exp)),f"PO {fmt_lakh(exp['p_o_value'].sum())} | Margin {fmt_lakh(exp['margin'].sum())}","dark"),("Exit Projection",fmt_int(len(ex)+len(exp)),f"PO {fmt_lakh(ex_proj_po_tab)} | Margin {fmt_lakh(ex_proj_margin_tab)}","red"),("Projected Margin %",f"{pct(ex_proj_margin_tab,ex_proj_po_tab):.1f}%","Projection","gold")]
+    c=st.columns(7, gap="medium"); vals=[("MTD Exit HC",fmt_int(len(ex)),"Actual","red"),("MTD Exit PO",fmt_lakh(po),"₹ Lakhs","red"),("MTD Exit Margin",fmt_lakh(mar),"₹ Lakhs","red"),("Margin %",f"{pct(mar,po):.1f}%","Margin / PO","gold"),("Exit Pipeline",fmt_int(len(exp)),f"PO {fmt_lakh(exp['p_o_value'].sum())} | Margin {fmt_lakh(exp['margin'].sum())}","dark"),("Exit Projection",fmt_int(len(ex)+len(exp)),f"PO {fmt_lakh(ex_proj_po_tab)} | Margin {fmt_lakh(ex_proj_margin_tab)}","red"),("Projected Margin %",f"{pct(ex_proj_margin_tab,ex_proj_po_tab):.1f}%","Projection","gold")]
     for col,(lab,val,sub,kind) in zip(c,vals):
         with col: metric_card(lab,val,sub,kind)
-    mm=monthly_metric("Exit","last_work_day",None); st.plotly_chart(clean_chart(px.bar(mm,x="Month",y="Value",text_auto=True,height=380),"Exit — Month-on-Month HC"),use_container_width=True)
+    metric_choice=st.selectbox("Exit chart metric",["HC","PO","Margin"],key="exit_chart_metric")
+    vc={"HC":None,"PO":"p_o_value","Margin":"margin"}[metric_choice]
+    mm=monthly_metric("Exit","last_work_day",vc).copy()
+    if vc: mm["Value"]=mm["Value"]/100000
+    fig_ex=clean_chart(px.bar(mm,x="Month",y="Value",text_auto=(".1f" if vc else True),height=380),f"Exit — Month-on-Month {metric_choice}{' (₹ Lakhs)' if vc else ''}")
+    if metric_choice=="HC": plot_with_month_drill(fig_ex,"exit_mom_chart","Exit",mm)
+    else: st.plotly_chart(fig_ex,use_container_width=True)
+    exit_pipe_month=st.selectbox("Exit Projection detail month",[month_label(p) for p in pd.period_range(selected_period-8,selected_period,freq="M")],index=8,key="exit_pipe_month")
+    exit_pipe_detail=candidate_month_detail("Exit Projection",period_from_label(exit_pipe_month))
+    if not exit_pipe_detail.empty:
+        st.markdown(f"**Exit Projection candidates — {exit_pipe_month}**")
+        st.dataframe(exit_pipe_detail.style.format({c:"{:,.1f}" for c in ["PO (L)","Margin (L)"] if c in exit_pipe_detail.columns}),use_container_width=True,hide_index=True,height=280)
     c1,c2=st.columns(2)
     with c1:
         dd=dod_metric("Exit","last_work_day"); st.plotly_chart(clean_chart(px.line(dd,x="Date",y="Value",markers=True,text="Value",height=350),"Exit — DOD Trend"),use_container_width=True)
@@ -659,7 +823,7 @@ with tabs[5]:
     detail=ex.groupby(["company_name","BH","KAM","Domain"]).agg(HC=("full_name","size"),PO=("p_o_value","sum"),Margin=("margin","sum")).reset_index(); detail["PO (L)"]=detail["PO"]/100000; detail["Margin (L)"]=detail["Margin"]/100000; detail["Margin %"]=np.where(detail["PO"]!=0,detail["Margin"]/detail["PO"]*100,0); detail=ordered_sort(detail,"HC")
     st.dataframe(detail[["company_name","BH","KAM","Domain","HC","PO (L)","Margin (L)","Margin %"]].sort_values("HC",ascending=False).style.format({"PO (L)":"{:,.1f}","Margin (L)":"{:,.1f}","Margin %":"{:,.1f}%"}),use_container_width=True,height=380,hide_index=True)
 with tabs[6]:
-    c=st.columns(6); vals=[
+    c=st.columns(6, gap="medium"); vals=[
         ("OB MTD",m["ob_hc"],f"PO {fmt_lakh(m['ob_po'])} | Margin {fmt_lakh(m['ob_margin'])}","green"),
         ("OB Pipeline",m["ob_pipe_hc"],f"PO {fmt_lakh(m['ob_pipe_po'])} | Margin {fmt_lakh(m['ob_pipe_margin'])}","green"),
         ("OB Projection",ob_proj,f"PO {fmt_lakh(ob_proj_po)} | Margin {fmt_lakh(ob_proj_margin)}","green"),
