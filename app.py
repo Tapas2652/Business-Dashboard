@@ -862,9 +862,31 @@ with tabs[6]:
     for p in pd.period_range(selected_period-8,selected_period,freq="M"):
         obx=filter_df(data["Onboarding"],"Onboarding",filters); obx=obx[obx["display_date"].dt.to_period("M")==p]; exx=filter_df(data["Exit"],"Exit",filters); exx=exx[exx["last_work_day"].dt.to_period("M")==p]
         net_mom.append({"Month":month_label(p),"Net":len(obx)-len(exx)})
-    nm=pd.DataFrame(net_mom); c1,c2=st.columns(2)
-    with c1: st.plotly_chart(clean_chart(px.bar(nm,x="Month",y="Net",text_auto=True,height=370),"Net HC — Month-on-Month"),use_container_width=True)
-    with c2: st.plotly_chart(clean_chart(px.line(nm,x="Month",y="Net",markers=True,text="Net",height=370),"Net HC Trend"),use_container_width=True)
+    # Net trend board: separate HC, PO, Margin and Margin % views.
+    net_rows=[]
+    for p in pd.period_range(selected_period-8,selected_period,freq="M"):
+        obx=filter_df(data["Onboarding"],"Onboarding",filters)
+        exx=filter_df(data["Exit"],"Exit",filters)
+        obx=obx[obx["display_date"].dt.to_period("M")==p]
+        exx=exx[exx["last_work_day"].dt.to_period("M")==p]
+        ob_hc=len(obx); ex_hc=len(exx)
+        ob_po=pd.to_numeric(obx["p_o_value"],errors="coerce").fillna(0).sum()
+        ex_po=pd.to_numeric(exx["p_o_value"],errors="coerce").fillna(0).sum()
+        ob_margin=pd.to_numeric(obx["margin"],errors="coerce").fillna(0).sum()
+        ex_margin=pd.to_numeric(exx["margin"],errors="coerce").fillna(0).sum()
+        net_po=(ob_po-ex_po)/100000
+        net_margin=(ob_margin-ex_margin)/100000
+        net_rows.append({"Month":month_label(p),"Net HC":ob_hc-ex_hc,"Net PO":net_po,"Net Margin":net_margin,
+                         "Net Margin %":(net_margin/net_po*100 if net_po else 0)})
+    nm=pd.DataFrame(net_rows)
+    c1,c2=st.columns(2)
+    with c1: st.plotly_chart(clean_chart(px.bar(nm,x="Month",y="Net HC",text_auto=True,height=350),"Net HC — Month-on-Month"),use_container_width=True)
+    with c2: st.plotly_chart(clean_chart(px.line(nm,x="Month",y="Net HC",markers=True,text="Net HC",height=350),"Net HC Trend"),use_container_width=True)
+    c1,c2=st.columns(2)
+    with c1: st.plotly_chart(clean_chart(px.bar(nm,x="Month",y="Net PO",text_auto=".1f",height=350),"Net PO — Month-on-Month (₹ Lakhs)"),use_container_width=True)
+    with c2: st.plotly_chart(clean_chart(px.bar(nm,x="Month",y="Net Margin",text_auto=".1f",height=350),"Net Margin — Month-on-Month (₹ Lakhs)"),use_container_width=True)
+    c1,c2=st.columns(2)
+    with c1: st.plotly_chart(clean_chart(px.line(nm,x="Month",y="Net Margin %",markers=True,text="Net Margin %",height=350),"Net Margin % — Month-on-Month"),use_container_width=True)
     st.markdown('<div class="section-title">BH Net / Projection</div>',unsafe_allow_html=True)
     score=bh_scorecard(data,selected_period,as_of,filters)
     # CEO scorecard order: Actual OB/Exit/Net, then Projection OB/Exit/Net.
